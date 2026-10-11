@@ -29,6 +29,7 @@ Edit `src/content.ts`: typed recordings, YouTube IDs, social links and both tran
 npx playwright install chromium firefox webkit
 npm run build
 npm test
+npm run test:fog
 ```
 
 Tests cover all recordings and films, lazy media loading, keyboard dialogs, language persistence, motion preferences, context loss, WebGL denial, default audio, retained mute preference, film audio suppression and mobile layout. External YouTube playback is mocked in UI tests; use the published site to verify the real player. Mobile tests emulate a device; confirm frame rate on a physical phone before advertising a performance guarantee.

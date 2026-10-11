@@ -9,6 +9,7 @@
     "build": "npm run check && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "playwright test",
+    "test:fog": "node scripts/check-fog.mjs",
     "assets": "node scripts/prepare-assets.mjs"
   },
   "dependencies": {
