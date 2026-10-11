@@ -273,7 +273,8 @@ export class CinematicLens {
     const projected=light.clone().project(camera);
     this.grade.uniforms.uLight.value.set(projected.x*.5+.5,projected.y*.5+.5);
     const cinema=THREE.MathUtils.smoothstep(journey,1.72,1.98)*(1-THREE.MathUtils.smoothstep(journey,2.4,2.65));
-    this.grade.uniforms.uLightColor.value.set('#e31332').lerp(new THREE.Color('#85939f'),cinema);
+    const band=THREE.MathUtils.smoothstep(journey,3.56,3.86)*(1-THREE.MathUtils.smoothstep(journey,4.48,4.74));
+    this.grade.uniforms.uLightColor.value.set('#e31332').lerp(new THREE.Color('#85939f'),Math.max(cinema,band));
     this.quad.material=this.grade;
     this.renderer.setRenderTarget(null);this.renderer.render(this.scene,this.camera);
   }

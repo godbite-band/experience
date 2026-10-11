@@ -101,12 +101,78 @@ test('every recording and the cinema are centred along a continuous viewing axis
  }
 });
 
+test('live crosses the screen on a straight axis and preserves the opening band frame',async({page})=>{
+ await page.addScriptTag({content:route+'\nwindow.godbiteRoute={cameraRoute,interiorLayout,LIVE_SCREEN_CROSSING,LIVE_SCREEN_Z};'});
+ const results=await page.evaluate(()=>{
+  const {cameraRoute,interiorLayout,LIVE_SCREEN_CROSSING,LIVE_SCREEN_Z}=(window as any).godbiteRoute;
+  return [false,true].map(mobile=>({mobile,layout:interiorLayout(mobile),screenZ:LIVE_SCREEN_Z,
+   crossing:cameraRoute(LIVE_SCREEN_CROSSING,mobile),band:cameraRoute(4,mobile),
+   frames:Array.from({length:1001},(_,i)=>cameraRoute(3+i/1000,mobile)),
+   approach:Array.from({length:651},(_,i)=>cameraRoute(3+i/1000,mobile)),
+  }));
+ });
+ for(const {mobile,layout,screenZ,crossing,band,frames,approach} of results){
+  for(const frame of frames){
+   expect(frame.position[0]).toBe(layout.cinemaX);
+   expect(frame.target[0]).toBe(frame.position[0]);
+   expect(frame.target[2]).toBeLessThan(frame.position[2]);
+   expect(frame.lookAround).toBe(0);
+  }
+  for(const frame of approach)expect(frame.target[1]).toBe(frame.position[1]);
+  expect(crossing.position[2]).toBe(layout.origin[2]+layout.liveZ+screenZ);
+  expect(band.position[0]-layout.bandX).toBe(mobile?-4:4);
+  expect(band.position[2]-layout.origin[2]-layout.bandZ).toBe(mobile?30:24);
+  expect(band.target[1]).toBe(mobile?-.5:3.5);
+ }
+});
+
+test('band follows one diagonal from its opening frame, without yawing, then crosses the open doorway',async({page})=>{
+ await page.addScriptTag({content:route+'\nwindow.godbiteRoute={cameraRoute,interiorLayout,BAND_EXIT,bandDoorOpening};'});
+ const results=await page.evaluate(()=>{
+  const {cameraRoute,interiorLayout,BAND_EXIT,bandDoorOpening}=(window as any).godbiteRoute;
+  return [false,true].map(mobile=>({layout:interiorLayout(mobile),exit:BAND_EXIT,
+   frames:Array.from({length:1001},(_,i)=>({p:4+i/1000,...cameraRoute(4+i/1000,mobile),opening:bandDoorOpening(4+i/1000)})),
+  }));
+ });
+ for(const {layout,exit,frames} of results){
+  const doorZ=layout.origin[2]+layout.bandZ+exit.z;
+  for(let i=0;i<frames.length;i++){
+   const frame=frames[i];
+   expect(frame.target[0]).toBe(frame.position[0]);
+   expect(frame.target[2]).toBeLessThan(frame.position[2]);
+   if(i){
+    expect(frame.position[0]).toBeGreaterThanOrEqual(frames[i-1].position[0]);
+    expect(frame.position[2]).toBeLessThan(frames[i-1].position[2]);
+   }
+   if(frame.p<=4.55){
+    const start=frames[0].position,end=frames[550].position;
+    const sideways=(frame.position[0]-start[0])/(end[0]-start[0]);
+    const forward=(frame.position[2]-start[2])/(end[2]-start[2]);
+    expect(sideways).toBeCloseTo(forward,10);
+   }else expect(frame.position[0]).toBe(layout.bandExitX);
+   if(Math.abs(frame.position[2]-doorZ)<1){
+    expect(frame.position[0]-layout.bandX).toBe(exit.x);
+    expect(frame.position[1]).toBeGreaterThan(0);
+    expect(frame.position[1]).toBeLessThan(exit.height);
+    expect(frame.opening).toBe(1);
+    expect(frame.target[1]).toBe(frame.position[1]);
+   }
+  }
+  expect(frames[200].position[0]).toBeGreaterThan(layout.cinemaX);
+  expect(frames[200].position[0]).toBeLessThan(layout.bandExitX);
+  expect(frames[0].opening).toBe(0);
+  expect(frames[550].opening).toBe(1);
+  expect(frames.at(-1)!.position[0]).toBe(layout.signalX);
+  expect(frames.at(-1)!.position[2]).toBeLessThan(doorZ);
+ }
+});
+
 test('camera velocity and acceleration join smoothly and the exit arc clears the final stone',async({page})=>{
  await page.addScriptTag({content:route+'\nwindow.godbiteRoute={cameraRoute,RECORD_STOPS};'});
  const results=await page.evaluate(()=>{
   const {cameraRoute,RECORD_STOPS}=(window as any).godbiteRoute,epsilon=1e-6;
   return [false,true].map(mobile=>({mobile,
-   joins:[1,...RECORD_STOPS,1.82,1.9,2,2.5,2.6,3,3.5,3.65].map(p=>{
+   joins:[1,...RECORD_STOPS,1.82,1.9,2,2.5,2.6,3,3.5,3.65,4,4.55,4.65].map(p=>{
     const before=cameraRoute(p-epsilon,mobile),at=cameraRoute(p,mobile),after=cameraRoute(p+epsilon,mobile);
     return (['position','target'] as const).map(key=>at[key].map((value:number,axis:number)=>({
      left:(value-before[key][axis])/epsilon,right:(after[key][axis]-value)/epsilon,
@@ -134,7 +200,7 @@ test('mist and rooms fade continuously without revealing the cinema during the r
  const result=await page.evaluate(()=>{
   const {scenePresence,RECORD_STOPS}=(window as any).godbiteRoute;
   return {records:RECORD_STOPS.map((p:number)=>scenePresence(p)),
-   samples:Array.from({length:4001},(_,i)=>scenePresence(i*.001))};
+   samples:Array.from({length:5001},(_,i)=>scenePresence(i*.001))};
  });
  for(const stop of result.records){expect(stop.forest).toBe(1);expect(stop.gallery).toBe(1);expect(stop.cinema).toBe(0);}
  for(let i=1;i<result.samples.length;i++){
@@ -149,7 +215,10 @@ test('mist and rooms fade continuously without revealing the cinema during the r
  expect(result.samples[2640].cinema).toBe(0);
  expect(result.samples[3000].live).toBe(1);
  expect(result.samples[3000].signal).toBe(0);
- expect(result.samples[3860].signal).toBe(1);
+ expect(result.samples[3860].band).toBe(1);
+ expect(result.samples[3860].signal).toBe(0);
+ expect(result.samples[4860].band).toBe(0);
+ expect(result.samples[4860].signal).toBe(1);
 });
 
 test('all opening text disappears before halfway through the forest, ahead of the door',async({page})=>{

@@ -3,11 +3,11 @@ import { test, expect } from '@playwright/test';
 test('mobile decision labels are readable and touch controls are separated',async({page})=>{
   await page.setViewportSize({width:320,height:568});await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('./');
-  for(const selector of ['.main-nav a','.hero-kicker','.hero-poem','.latest-listen','.journey-link','.language-switch button','#credits-button']){
+  for(const selector of ['.main-nav a','.hero-kicker','.hero-poem','.latest-listen','.journey-link','.language-switch button']){
     const sizes=await page.locator(selector).evaluateAll(elements=>elements.map(element=>parseFloat(getComputedStyle(element).fontSize)));
     expect(Math.min(...sizes),selector).toBeGreaterThanOrEqual(12);
   }
-  for(const selector of ['.main-nav a','.language-switch button','#sound-toggle','#credits-button','.latest-listen']){
+  for(const selector of ['.main-nav a','.language-switch button','#sound-toggle','.latest-listen']){
     const heights=await page.locator(selector).evaluateAll(elements=>elements.map(element=>element.getBoundingClientRect().height));
     expect(Math.min(...heights),selector).toBeGreaterThanOrEqual(44);
   }

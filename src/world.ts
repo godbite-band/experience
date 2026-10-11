@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { asset, films, releases, liveConcert } from './content';
 import { CinematicLens, type PortalGlow } from './cinematic';
+import { createDressingRoom } from './dressing-room';
 import { seatOverlapsScreen, type ScreenBounds } from './cinema-seats';
-import { cameraRoute, activeRecording, atmospherePresence, forestDoor, forestTreePosition, interiorLayout, interiorPoint, scenePresence, CAMERA_HEIGHT, RETREAT_LIMIT, liveFigurePosition } from './journey';
+import { cameraRoute, activeRecording, atmospherePresence, forestDoor, forestTreePosition, interiorLayout, interiorPoint, scenePresence, CAMERA_HEIGHT, RETREAT_LIMIT, liveFigurePosition, LIVE_SCREEN_Z, bandDoorOpening } from './journey';
 
 const clamp = THREE.MathUtils.clamp;
 const smooth = THREE.MathUtils.smoothstep;
@@ -155,6 +156,8 @@ export class World {
   private drumVisibility=1;
   private secretFigure=new THREE.Group();
   private signal = new THREE.Group();
+  private band = new THREE.Group();
+  private bandExitDoor: THREE.Group;
   private timeMaterials: THREE.ShaderMaterial[] = [];
   private screens: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>[] = [];
   private screenFrame!: THREE.Mesh;
@@ -211,7 +214,8 @@ export class World {
     this.scene.add(this.secretLight);
     this.scene.add(this.forest,this.interior);
     this.forest.add(this.terrain);
-    this.interior.add(this.ritual,this.cinema,this.live,this.signal,this.exitGate);
+    const dressingRoom=createDressingRoom();this.band=dressingRoom.group;this.bandExitDoor=dressingRoom.exitDoor;this.timeMaterials.push(dressingRoom.mirror);
+    this.interior.add(this.ritual,this.cinema,this.live,this.band,this.signal,this.exitGate);
     this.makeForest();
     this.makeRitual();
     const layout=interiorLayout(innerWidth<800);
@@ -220,7 +224,7 @@ export class World {
     this.makeLive();
     this.makeSignal();
     this.makeDust();
-    for(const group of [this.forest,this.terrain,this.ritual,this.cinema,this.live,this.signal,this.exitGate])this.prepareFade(group);
+    for(const group of [this.forest,this.terrain,this.ritual,this.cinema,this.live,this.band,this.signal,this.exitGate])this.prepareFade(group);
     this.prepareFade(this.liveDrums);
     this.resize();
     addEventListener('resize', this.resize);
@@ -609,9 +613,9 @@ export class World {
     box(0,10,15,32,.4,44,metal);
     box(0,.42,0,22,.84,8,new THREE.MeshStandardMaterial({map:grime,color:'#282420',roughness:.94}));
     box(0,.1,5.1,10,.2,2,metal);box(0,.23,4.2,10,.26,1,metal);
-    const frame=box(0,4.4,-3,12.2,6.9,.35,metal);
+    box(0,4.4,-3,12.2,6.9,.35,metal);
     this.liveScreen=new THREE.Mesh(new THREE.PlaneGeometry(11.6,6.525),new THREE.MeshBasicMaterial({color:'#777777'}));
-    this.liveScreen.position.set(0,4.4,frame.position.z+.2);this.live.add(this.liveScreen);
+    this.liveScreen.position.set(0,4.4,LIVE_SCREEN_Z);this.live.add(this.liveScreen);
     // Empty instruments, cables and battered speaker stacks leave the stage ready for a show.
     const speaker=new THREE.MeshStandardMaterial({color:'#101315',roughness:.97});
     for(const side of [-1,1]){
@@ -783,8 +787,6 @@ export class World {
       thread.frustumCulled=false;
       this.timeMaterials.push(material);this.signal.add(thread);
     }
-    const blade=new THREE.Mesh(new THREE.PlaneGeometry(20,.065),new THREE.MeshBasicMaterial({color:'#dc2442',toneMapped:false}));
-    blade.position.set(0,CAMERA_HEIGHT,-13);this.signal.add(blade);
   }
 
   private makeDust() {
@@ -851,7 +853,7 @@ export class World {
   }
   setProgress(progress: number) {
     if(this.secretStarted!==null||this.secretReturn)return;
-    this.targetProgress=clamp(progress,RETREAT_LIMIT,4);
+    this.targetProgress=clamp(progress,RETREAT_LIMIT,5);
     if(this.capture){this.progress=this.targetProgress;this.progressVelocity=0;}
     if(progress>2.25&&!this.liveTextureLoading){
       this.liveTextureLoading=true;
@@ -935,7 +937,9 @@ export class World {
     this.cinema.position.set(layout.cinemaX,0,layout.cinemaZ);this.cinema.scale.setScalar(cinemaScale);
     this.screenFrame.position.y=CAMERA_HEIGHT/cinemaScale;
     for(const screen of this.screens)screen.position.y=CAMERA_HEIGHT/cinemaScale;
-    this.signal.position.set(layout.cinemaX,0,layout.signalZ);
+    this.signal.position.set(layout.signalX,0,layout.signalZ);
+    this.band.position.set(layout.bandX,0,layout.bandZ);
+    this.bandExitDoor.rotation.y=bandDoorOpening(p)*Math.PI/2;
     this.live.position.set(layout.cinemaX,0,layout.liveZ);
     this.secretFigure.position.fromArray(liveFigurePosition(mobile));
     this.exitGate.position.set(layout.cinemaX,0,layout.exitZ);
@@ -1001,6 +1005,7 @@ export class World {
     this.setPresence(this.ritual,presence.gallery);
     this.setPresence(this.cinema,presence.cinema);
     this.setPresence(this.live,presence.live);
+    this.setPresence(this.band,presence.band);
     this.setPresence(this.liveDrums,presence.live*smooth(this.drumVisibility,0,1));
     let cinemaScreen:ScreenBounds|null=null;
     if(p>1.8&&p<2.65){
@@ -1033,9 +1038,10 @@ export class World {
     const light=new THREE.Vector3(door.position[0],CAMERA_HEIGHT,door.position[2]);
     const galleryLight=new THREE.Vector3().fromArray(interiorPoint([layout.galleryCenterX,3,0],mobile));
     const cinemaLight=new THREE.Vector3().fromArray(interiorPoint([layout.cinemaX,CAMERA_HEIGHT,layout.cinemaZ],mobile));
-    const signalLight=new THREE.Vector3().fromArray(interiorPoint([layout.cinemaX,CAMERA_HEIGHT,layout.signalZ-13],mobile));
+    const signalLight=new THREE.Vector3().fromArray(interiorPoint([layout.signalX,CAMERA_HEIGHT,layout.signalZ-13],mobile));
     const liveLight=new THREE.Vector3().fromArray(interiorPoint([layout.cinemaX,5,layout.liveZ],mobile));
-    light.lerp(galleryLight,smooth(p,.65,.88)).lerp(cinemaLight,smooth(p,1.68,1.96)).lerp(liveLight,smooth(p,2.55,2.95)).lerp(signalLight,smooth(p,3.5,3.85));
+    const bandLight=new THREE.Vector3().fromArray(interiorPoint([layout.bandX-4,5,layout.bandZ],mobile));
+    light.lerp(galleryLight,smooth(p,.65,.88)).lerp(cinemaLight,smooth(p,1.68,1.96)).lerp(liveLight,smooth(p,2.55,2.95)).lerp(bandLight,smooth(p,3.5,3.85)).lerp(signalLight,smooth(p,4.5,4.85));
     this.portalGlows[0].presence=presence.forest;
     this.portalGlows[1].presence=presence.cinemaDoor;
     this.lens.render(this.scene,this.camera,this.timer,p,light,breath,this.portalGlows);

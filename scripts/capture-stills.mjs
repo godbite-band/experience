@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 const root = new URL('../public/images/', import.meta.url);
 const output = new URL('../test-results/visual/', import.meta.url);
 const liveOnly=process.argv.includes('--live-only');
-const chapters=liveOnly?['live']:['threshold','music','cinema','live','contact'];
+const bandOnly=process.argv.includes('--band-only');
+const partial=liveOnly||bandOnly;
+const chapters=bandOnly?['band']:liveOnly?['live']:['threshold','music','cinema','live','band','contact'];
 await mkdir(root,{recursive:true});await mkdir(output,{recursive:true});
 const browser=await chromium.launch({
   executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
@@ -36,7 +38,7 @@ for(const chapter of chapters){
   await page.screenshot({path:fileURLToPath(new URL('desktop-'+chapter+'.png',output))});
   if(chapter==='live')await capturePlaying('live-playing');
 }
-if(!liveOnly){
+if(!partial){
 await page.evaluate(()=>window.scrollTo({top:document.getElementById('cinema').offsetTop,behavior:'instant'}));
 for(const film of ['walkin-phoenix','tarrare-52','elbow-grease']){
   await page.locator('[data-film='+film+']').click();
@@ -50,15 +52,15 @@ await page.setViewportSize({width:390,height:844});
 for(const chapter of chapters){
   await page.evaluate(id=>window.scrollTo({top:document.getElementById(id).offsetTop,behavior:'instant'}),chapter);
   await page.waitForTimeout(1300);
-  if(chapter==='live'){
+  if(chapter==='live'||chapter==='band'){
     const png=await page.locator('#world-canvas').evaluate(canvas=>canvas.toDataURL('image/png'));
-    images.push(['live-mobile',await sharp(Buffer.from(png.split(',')[1],'base64')).webp({quality:82}).toBuffer()]);
+    images.push([chapter+'-mobile',await sharp(Buffer.from(png.split(',')[1],'base64')).webp({quality:82}).toBuffer()]);
   }
   await page.screenshot({path:fileURLToPath(new URL('mobile-'+chapter+'.png',output))});
   if(chapter==='live')await capturePlaying('live-mobile-playing');
 }
 let socialCard;
-if(!liveOnly){
+if(!partial){
 await page.setViewportSize({width:1200,height:630});
 await page.evaluate(()=>{window.scrollTo({top:0,behavior:'instant'});document.querySelectorAll('.masthead,.frame-footer,.hero-lower,.frame-mark').forEach(element=>element.style.display='none');});
 await page.waitForTimeout(1300);
@@ -66,6 +68,7 @@ socialCard=await page.screenshot({type:'jpeg',quality:90});
 }
 console.log('Browser errors:',JSON.stringify(errors));
 await browser.close();
+if(errors.length)throw new Error('Scene capture failed: '+errors[0]);
 for(const [name,buffer] of images)await writeFile(new URL(name+'.webp',root),buffer);
 if(socialCard)await writeFile(new URL('social-card.jpg',root),socialCard);
-console.log(liveOnly?'Captured the live club for desktop and mobile.':'Captured five scene stills, desktop/mobile previews and the social card.');
+console.log(bandOnly?'Captured the dressing room for desktop and mobile.':liveOnly?'Captured the live club for desktop and mobile.':'Captured six scene stills, desktop/mobile previews and the social card.');

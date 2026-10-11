@@ -1,6 +1,6 @@
 # Godbite — a white forest without windows
 
-A native-scroll journey through five Three.js scenes: the threshold, ritual, cinema, live club and signal. Vite, TypeScript, semantic HTML, local fonts and original Godbite artwork. English and Polish, pulsing synthesized ambient, enabled by default, and still-image fallback.
+A native-scroll journey through six Three.js scenes: the threshold, ritual, cinema, live club, dressing room and signal. Vite, TypeScript, semantic HTML, local fonts and original Godbite artwork. English and Polish, pulsing synthesized ambient, enabled by default, and still-image fallback.
 
 ## Run locally
 
@@ -18,7 +18,8 @@ Open the /experience/ address printed by Vite. Production: `npm run build`, then
 Edit `src/content.ts`: typed recordings, YouTube IDs, social links and both translations. The EP displayed as **You can lead a horse EP** links to its existing Bandcamp **demo** page. Replace images in `public/images`; the asset preparation script documents their original sources.
 
 - `npm run assets` refreshes official covers and film thumbnails.
-- `node scripts/capture-stills.mjs` against the running dev server exports the five real scene stills, social card and desktop/mobile previews.
+- `node scripts/capture-stills.mjs` against the running dev server exports the six real scene stills, social card and desktop/mobile previews.
+- Append `--band-only` after the dev URL to capture only the dressing room, including its portrait fallback, without replacing existing artwork or other scene captures.
 - Append `--live-only` after the dev URL to refresh only the club, including its portrait fallback. The captured silhouette and its invisible button share the same position on both layouts.
 - Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` if using an installed browser instead of Playwright Chromium.
 - Cover credits: Mir — Artur Ciechorski; JISM and Social Media Girls — Trash Boat. The original artwork is not licensed for reuse outside Godbite's site.
@@ -42,6 +43,10 @@ Select **Settings → Pages → Source: GitHub Actions**. Pushes to master check
 The canonical URL, social metadata, sitemap and robots file use that address. Update them and Vite's base together if moving to a custom domain. No secrets, backend, analytics, or third-party scripts are used at startup. YouTube is contacted only after a visitor starts a film. Ambient sound is enabled by default and starts automatically when allowed, or with the first click, tap or keyboard interaction when the browser blocks autoplay. A deliberate mute is remembered for the tab session. Film playback temporarily silences the ambient and closing the film restores it.
 
 ## Atmosphere
+
+The opening taglines share IBM Plex Mono and one measured space. Each holds for six seconds and dissolves with blur and a slight expansion over two seconds, for a sixteen-second cycle. Reduced-motion and WebGL fallback views show both lines without animation.
+
+The dressing room follows Live and precedes Contact. Five empty chairs stand before a tarnished mirror containing five anonymous, stationary silhouettes; procedural condensation drifts across the glass. Cold practical lighting and red light beneath a closed door illuminate the abandoned room. `src/dressing-room.ts` builds the scene without external images or a reflection render pass. `src/band.ts` holds the current and historical lineup and renders an accessible year-based timeline, with an unknown start for Iwo. Recordings use the existing release catalogue. Biography and the relocated manifesto are bilingual; history opens inside a scrollable panel, leaving the camera position unchanged. Desktop and portrait captures supply the motion and WebGL fallbacks. Haze clears before Contact, now chapter six.
 
 Camera positions, room alignment and text fades live in `src/journey.ts`. The forest door and first recording share the centre of the frame. A level arc clears the final pedestal and joins a straight axis through the cinema doorway and screen into the live club; move the rooms and their focal points together when changing a doorway. Camera interpolation preserves velocity and acceleration at every join, with critically damped scroll tracking. `RECORD_STOPS` controls the five recording views; `chapterPresentation` controls text independently of camera motion. `scenePresence` fades each room and its lights continuously instead of toggling them during the recording visits.
 

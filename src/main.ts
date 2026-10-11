@@ -6,15 +6,16 @@ import './style.css';
 import { asset, copy, films, releases, socials, tracklists, liveConcert, secretConcert } from './content';
 import type { Chapter, Language } from './content';
 import { Ambient } from './ambient';
+import { renderBand } from './band';
 import { VideoPlayer } from './video-player';
 import { SCENE_ANCHORS, RETREAT_LIMIT, RETREAT_TRIGGER, activeRecording, atmospherePresence, chapterPresentation, liveFigureStillBounds } from './journey';
 import type { World } from './world';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
-const chapters: Chapter[] = ['threshold', 'music', 'cinema', 'live', 'contact'];
+const chapters: Chapter[] = ['threshold', 'music', 'cinema', 'live', 'band', 'contact'];
 const sections = chapters.map(id => $('#'+id));
 const stages = sections.map(section => section.querySelector<HTMLElement>('.chapter-stage')!);
-const chapterKeys = ['threshold', 'music', 'cinema', 'club', 'signal'] as const;
+const chapterKeys = ['threshold', 'music', 'cinema', 'club', 'bandRoom', 'signal'] as const;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let language: Language = 'en';
 try { if (localStorage.getItem('godbite-language') === 'pl') language = 'pl'; } catch { /* Storage can be unavailable in private browser contexts. */ }
@@ -274,6 +275,7 @@ function updateSoundInvitation(){
 }
 function translate() {
   const text=copy[language];document.documentElement.lang=language;
+  renderBand(language);
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(element=>{
     const key=element.dataset.i18n as keyof typeof text;
     if(key in text)element.textContent=text[key];
@@ -362,12 +364,12 @@ function progress(){
     const start=sections[index].offsetTop,end=sections[index+1].offsetTop;
     if(y<end)return SCENE_ANCHORS[index]+(SCENE_ANCHORS[index+1]-SCENE_ANCHORS[index])*Math.max(0,(y-start)/(end-start));
   }
-  return 4;
+  return SCENE_ANCHORS[SCENE_ANCHORS.length-1];
 }
 let scrollPending=false;
 function updateStill(){
   const scene=chapters[currentChapter];
-  const image=scene==='cinema'&&selectedFilm.id!==films[0].id?'cinema-'+selectedFilm.id:scene==='live'&&innerWidth<800?'live-mobile':scene;
+  const image=scene==='cinema'&&selectedFilm.id!==films[0].id?'cinema-'+selectedFilm.id:(scene==='live'||scene==='band')&&innerWidth<800?scene+'-mobile':scene;
   still.style.backgroundImage='url("'+asset('images/'+image+'.webp')+'")';
   still.style.backgroundSize=scene==='cinema'&&innerWidth<800?`${innerWidth*1.61}px auto`:'cover';
   if(scene==='cinema'){
@@ -402,7 +404,7 @@ function updateJourney() {
   if(index!==2)world?.setFilmHovered(false);
   $('#chapter-name').textContent=copy[language][chapterKeys[index]];
   $('#chapter-number').textContent=String(index+1).padStart(2,'0');
-  $('#position-fill').style.width=(Math.max(0,p)/4*100)+'%';
+  $('#position-fill').style.width=(Math.max(0,p)/SCENE_ANCHORS[SCENE_ANCHORS.length-1]*100)+'%';
   document.querySelectorAll<HTMLAnchorElement>('[data-nav]').forEach(anchor=>{
     if(anchor.dataset.nav===chapters[index])anchor.setAttribute('aria-current','location');
     else anchor.removeAttribute('aria-current');
@@ -425,7 +427,6 @@ function navigate(chapter: Chapter, instant=false) {
 document.querySelectorAll<HTMLAnchorElement>('[data-nav]').forEach(anchor=>anchor.addEventListener('click',event=>{
   event.preventDefault();const chapter=anchor.dataset.nav as Chapter;
   navigate(chapter,true);
-  if(chapter==='music')openRelease(0);
 }));
 document.querySelectorAll<HTMLAnchorElement>('[data-journey]').forEach(anchor=>anchor.addEventListener('click',event=>{
   event.preventDefault();navigate(anchor.dataset.journey as Chapter);

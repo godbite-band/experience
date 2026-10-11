@@ -1,5 +1,5 @@
 export type Language = 'en' | 'pl';
-export type Chapter = 'threshold' | 'music' | 'cinema' | 'live' | 'contact';
+export type Chapter = 'threshold' | 'music' | 'cinema' | 'live' | 'band' | 'contact';
 export const liveConcert={youtubeId:'KYkbLPMH7xA',title:'Godbite @ Jambar — Full Live Show'};
 export const secretConcert={youtubeId:'ql6nWvkPoUI',title:'Godrite — Secret live concert'};
 export interface Release {
@@ -39,6 +39,12 @@ export const socials = [
 ] as const;
 export const copy = {
   en: {
+    band: 'Band', bandRoom: 'The dressing room', bandHistory: 'Band history',
+    bandBio: 'Godbite formed in Szczecin, Poland, in 2008. Alternative rock and progressive metal meet fractured rhythms, unconventional riffs and melody. Through Beastwork, the band brings live music together with independent art.',
+    vocals: 'Vocals', guitar: 'Guitar', bass: 'Bass', drums: 'Drums',
+    historyIntro: 'Five places. Changing presences. Years mark the changes; exact dates are not known.',
+    historyUnknown: 'Start unknown · until 2024', historyPresent: 'present', historyReleases: 'Recordings / milestones',
+    beastworkHistory: 'Beastwork — concerts and independent art exhibitions, initiated by Godbite.',
     enterFullscreen: 'Enter fullscreen', exitFullscreen: 'Exit fullscreen', fullscreenFailed: 'Fullscreen could not be changed. Please try again.',
     live: 'Live', club: 'The club', liveTitle: 'Godbite @ Jambar', liveKind: 'Live concert', liveIntro: 'An empty room. The sound remains.', playLive: 'Play concert', stopLive: 'Close video', secretFigure: 'A figure in the dark',
     listen: 'Listen', watch: 'Watch', contact: 'Contact', sound: 'Sound', on: 'On', off: 'Off', soundHint: 'Click once. Let the forest speak.',
@@ -63,6 +69,12 @@ export const copy = {
     loadingFilm: 'Opening the projection…', failedFilm: 'If the projection does not start, watch on YouTube.',
   },
   pl: {
+    band: 'Zespół', bandRoom: 'Garderoba', bandHistory: 'Historia zespołu',
+    bandBio: 'Godbite powstał w Szczecinie w 2008 roku. Rock alternatywny i metal progresywny spotykają się tu z połamaną rytmiką, nieszablonowymi riffami i melodią. Poprzez Beastwork zespół łączy koncerty z wystawami sztuki niezależnej.',
+    vocals: 'Wokal', guitar: 'Gitara', bass: 'Bas', drums: 'Perkusja',
+    historyIntro: 'Pięć miejsc. Zmieniające się obecności. Lata oznaczają zmiany; dokładne daty nie są znane.',
+    historyUnknown: 'Początek nieznany · do 2024', historyPresent: 'obecnie', historyReleases: 'Nagrania / wydarzenia',
+    beastworkHistory: 'Beastwork — cykl koncertów i wystaw sztuki niezależnej zainicjowany przez Godbite.',
     enterFullscreen: 'Pełny ekran', exitFullscreen: 'Wyjdź z pełnego ekranu', fullscreenFailed: 'Nie udało się zmienić trybu pełnego ekranu. Spróbuj ponownie.',
     live: 'Live', club: 'Klub', liveTitle: 'Godbite @ Jambar', liveKind: 'Koncert na żywo', liveIntro: 'Pusta sala. Dźwięk pozostaje.', playLive: 'Odtwórz koncert', stopLive: 'Zamknij film', secretFigure: 'Postać w mroku',
     listen: 'Słuchaj', watch: 'Oglądaj', contact: 'Kontakt', sound: 'Dźwięk', on: 'Wł.', off: 'Wył.', soundHint: 'Kliknij raz. Usłysz, co kryje las.',

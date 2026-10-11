@@ -188,7 +188,7 @@ export class Ambient {
   }
   setProgress(progress: number){
     this.progress=progress;
-    this.graph?.wind.frequency.setTargetAtTime(330-45*Math.min(progress,4)/4,this.context!.currentTime,2);
+    this.graph?.wind.frequency.setTargetAtTime(330-45*Math.min(progress,5)/5,this.context!.currentTime,2);
   }
   private create(){
     if(this.context)return;

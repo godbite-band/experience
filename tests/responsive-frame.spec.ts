@@ -15,7 +15,7 @@ for(const viewport of [{width:320,height:568},{width:390,height:844},{width:844,
         elements.forEach((element,index)=>element.style.fontSize=sizes[index]*2+'px');
       });
       if(viewport.width<=800)await expect.poll(()=>page.evaluate(()=>{
-        const credits=document.querySelector('#credits-button')!.getBoundingClientRect();
+        const credits=document.querySelector('.footer-controls')!.getBoundingClientRect();
         const navigation=document.querySelector('.main-nav')!.getBoundingClientRect();
         return navigation.top-credits.bottom;
       })).toBeGreaterThanOrEqual(8);

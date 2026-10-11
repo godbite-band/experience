@@ -34,9 +34,14 @@ test('first frame, working assets, default ambient and lazy film playback',async
   const bytes=await page.evaluate(()=>performance.getEntriesByType('resource').reduce((sum,entry)=>sum+(entry as PerformanceResourceTiming).encodedBodySize,0));
   expect(bytes).toBeLessThan(2.5*1024*1024);
 });
-test('five recordings, latest listening in two clicks and dialog keyboard behavior',async({page})=>{
+test('Listen navigates to the first recording and release dialogs open on selection',async({page})=>{
   await page.goto('./');
   await page.locator('[data-nav=music]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-chapter','music');
+  await expect(page.locator('#release-dialog')).not.toBeVisible();
+  await expect(page.locator('#release-list>li.is-current .release-list-title')).toHaveText('Social Media Girls');
+  expect(await page.evaluate(()=>window.scrollY)).toBe(await page.locator('#music').evaluate(section=>section.offsetTop));
+  await page.locator('#release-list>li.is-current button').click();
   await expect(page.locator('#release-dialog')).toBeVisible();
   await expect(page.locator('#release-title')).toHaveText('Social Media Girls');
   await expect(page.locator('#release-links a').first()).toHaveAttribute('href','https://open.spotify.com/album/4yji0Hoa0DhRDht4PMfB3z');
@@ -49,7 +54,7 @@ test('five recordings, latest listening in two clicks and dialog keyboard behavi
     await expect(page.locator('#release-links a').last()).toHaveAttribute('href',/godbite.bandcamp.com/);
   }
   await page.keyboard.press('Escape');await expect(page.locator('#release-dialog')).not.toBeVisible();
-  await expect(page.locator('[data-nav=music]')).toBeFocused();
+  await expect(page.locator('#release-list>li.is-current button')).toBeFocused();
   await expect(page.locator('#release-list button')).toHaveCount(5);
   await page.locator('[data-release=mir]').click();
   await expect(page.locator('#release-title')).toHaveText('Mir');
@@ -131,7 +136,7 @@ for(const reducedMotion of ['no-preference','reduce'] as const){
   await expect(page.locator('body')).toHaveAttribute('data-chapter','live');
   await expect(page.locator('#live-title')).toHaveText('Godbite @ Jambar');
   await expect(page.locator('#chapter-number')).toHaveText('04');
-  await expect(page.locator('.total-chapters')).toHaveText('05');
+  await expect(page.locator('.total-chapters')).toHaveText('06');
   await page.waitForTimeout(2000);
   await page.screenshot({path:`test-results/live-${page.viewportSize()!.width}-${reducedMotion}.png`});
   await page.locator('#live-play').click();
@@ -152,7 +157,7 @@ for(const reducedMotion of ['no-preference','reduce'] as const){
   if(reducedMotion==='reduce')await expect(page.locator('#still-live-playing')).toHaveCSS('opacity','0');
   await page.locator('#live-play').click();await page.locator('[data-nav=contact]').click();
   await expect(page.locator('#live-screen-player iframe')).toHaveCount(0);
-  await expect(page.locator('#chapter-number')).toHaveText('05');
+  await expect(page.locator('#chapter-number')).toHaveText('06');
   await expect(page.locator('.contact-address>a')).toBeVisible();
   expect(errors).toEqual([]);
  });
@@ -357,7 +362,7 @@ test('missing audio output gives a clear fallback and keeps contact usable',asyn
   await expect(page.locator('.contact-address>a')).toBeVisible();
 });
 
-test('final chapter clears atmospheric haze and Credits leaves the world animated',async({page},testInfo)=>{
+test('final chapter clears atmospheric haze and band history leaves the world animated',async({page},testInfo)=>{
  test.skip(testInfo.project.name!=='chrome','Check the WebGL drawing buffer in desktop Chromium.');
  // Production normally discards the drawing buffer after presenting each frame.
  await page.addInitScript(()=>{
@@ -371,9 +376,10 @@ test('final chapter clears atmospheric haze and Credits leaves the world animate
  await page.locator('[data-nav=contact]').click();
  await expect(page.locator('body')).toHaveAttribute('data-chapter','contact');
  await expect.poll(()=>page.locator('body').evaluate(body=>body.style.getPropertyValue('--atmosphere-presence'))).toBe('0');
- await page.locator('#credits-button').click();await expect(page.locator('#credits-dialog')).toBeVisible();
+ await page.locator('[data-nav=band]').click();
+ await page.locator('#band-history summary').click();await expect(page.locator('#band-history')).toHaveAttribute('open','');
  const frame=()=>page.locator('#world-canvas').evaluate((canvas:HTMLCanvasElement)=>canvas.toDataURL());
  const before=await frame();
  await expect.poll(async()=>await frame()!==before).toBe(true);
- await page.keyboard.press('Escape');await expect(page.locator('#credits-dialog')).not.toBeVisible();
+ await page.locator('#band-history summary').click();await expect(page.locator('#band-history')).not.toHaveAttribute('open','');
 });
