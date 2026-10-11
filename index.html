@@ -28,7 +28,7 @@
     <div class="frame-mark frame-mark--tl"></div><div class="frame-mark frame-mark--br"></div>
   </div>
   <header class="masthead">
-    <a href="#threshold" class="brand" aria-label="Godbite — home"><svg class="sigil" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M9 39 39 9"/><circle cx="24" cy="24" r="12"/></svg><span>GODBITE</span></a>
+    <a href="#threshold" class="brand" aria-label="Godbite — home"><svg class="sigil" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3 42.4 34.5 5.6 13.5 24 45 42.4 13.5 5.6 34.5Z"/></svg><span>GODBITE</span></a>
     <nav class="main-nav" aria-label="Main navigation"><a href="#music" data-nav="music" data-i18n="listen">Listen</a><a href="#cinema" data-nav="cinema" data-i18n="watch">Watch</a><a href="#live" data-nav="live" data-i18n="live">Live</a><a href="#contact" data-nav="contact" data-i18n="contact">Contact</a></nav>
     <div class="settings">
       <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-pressed="false" aria-label="Enter fullscreen" title="Enter fullscreen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="fullscreen-expand" d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><path class="fullscreen-collapse" d="M3 8h5V3m8 0v5h5M8 21v-5H3m13 5v-5h5"/></svg></button>
@@ -40,7 +40,7 @@
   <main id="journey">
     <section id="threshold" class="chapter" aria-labelledby="hero-title">
       <div class="chapter-stage hero-stage">
-        <div class="hero-heading"><p class="eyebrow hero-kicker" data-i18n="tagline">Dependent music / No alternative</p><p class="hero-genres" data-i18n="genres">Alternative rock / Progressive metal</p><p class="eyebrow hero-kicker" data-i18n="hometown">Szczecin, Poland</p><h1 id="hero-title"><img class="hero-logo" src="/images/godbite-logo.webp" alt="GODBITE" width="1800" height="608" fetchpriority="high"/></h1><p class="hero-poem" data-i18n="forest">You wake in a white forest without windows.</p><div class="sound-invitation"><button id="sound-hint" class="sound-hint" type="button" hidden></button></div></div>
+        <div class="hero-heading"><div class="hero-taglines"><p class="eyebrow hero-kicker" data-i18n="tagline">Dependent music / No alternative</p><p class="eyebrow hero-kicker hero-genres" data-i18n="genres">Alternative rock / Progressive metal</p></div><p class="eyebrow hero-kicker" data-i18n="hometown">Szczecin, Poland</p><h1 id="hero-title"><img class="hero-logo" src="/images/godbite-logo.webp" alt="GODBITE" width="1800" height="608" fetchpriority="high"/></h1><p class="hero-poem" data-i18n="forest">You wake in a white forest without windows.</p><div class="sound-invitation"><button id="sound-hint" class="sound-hint" type="button" hidden></button></div></div>
         <div class="hero-lower">
           <a href="#music" class="journey-link" data-journey="music"><span class="small-index">01 — 05</span><span data-i18n="follow">Follow the red light</span><span class="long-arrow" aria-hidden="true">↓</span></a>
           <div class="latest-release"><span class="eyebrow" data-i18n="latest">The latest transmission</span><button class="latest-film" data-play="social-media-girls"><span>Social Media Girls</span><span class="play-small" aria-hidden="true">↗</span></button><a class="latest-listen" href="https://open.spotify.com/album/4yji0Hoa0DhRDht4PMfB3z" target="_blank" rel="noopener noreferrer"><span data-i18n="listen">Listen</span> <span aria-hidden="true">↗</span></a></div>
@@ -93,13 +93,19 @@
             </nav>
           </div>
           <nav id="social-links" class="social-links" aria-label="Godbite on social media"></nav>
+          <section class="contact-credits" aria-labelledby="credits-title">
+            <p class="eyebrow">GODBITE / MMXXVI</p><h3 id="credits-title" data-i18n="creditsTitle">Behind the signal</h3>
+            <p class="credits-manifesto" data-i18n="creditsManifesto"></p>
+            <p class="credits-invocation" data-i18n="creditsInvocation"></p>
+            <p class="credits-body" data-i18n="creditsBody">Music, identity and original release artwork belong to Godbite and their credited collaborators. A white forest built for Godbite.</p>
+          </section>
         </div>
       </div>
     </section>
   </main>
   <footer class="frame-footer">
     <div class="origin">SZCZECIN, PL <span class="origin-coordinates">53.480977, 14.466567</span></div>
-    <div class="footer-controls"><button id="credits-button" data-i18n="credits">Credits</button></div>
+    <div class="footer-controls"><a href="https://github.com/horacy" target="_blank" rel="noopener noreferrer">Created by GOD</a></div>
     <div class="chapter-position"><span id="chapter-name">The threshold</span><span id="chapter-number">01</span><span class="position-track"><i id="position-fill"></i></span><span class="total-chapters">05</span></div>
   </footer>
   <dialog id="release-dialog" class="release-dialog" aria-labelledby="release-title">
@@ -112,12 +118,6 @@
     <div class="projection-head"><span id="projection-kind" class="eyebrow" data-i18n="cinema">The cinema</span><h2 id="projection-title"></h2></div>
     <div id="film-player" class="film-player"></div>
     <div class="projection-foot"><p data-i18n="failedFilm">If the projection does not start, watch on YouTube.</p><a id="external-film" target="_blank" rel="noopener noreferrer"><span data-i18n="external">Watch on YouTube</span> ↗</a></div>
-  </dialog>
-  <dialog id="credits-dialog" class="credits-dialog" aria-labelledby="credits-title">
-    <button class="dialog-close" data-close aria-label="Close">×</button><p class="eyebrow">GODBITE / MMXXVI</p><h2 id="credits-title" data-i18n="creditsTitle">Behind the signal</h2>
-    <p class="credits-manifesto" data-i18n="creditsManifesto"></p>
-    <p class="credits-invocation" data-i18n="creditsInvocation"></p>
-    <p data-i18n="creditsBody">Music, identity and original release artwork belong to Godbite and their credited collaborators. Mir: Artur Ciechorski. JISM and Social Media Girls: Trash Boat.</p>
   </dialog>
   <noscript><style>.chapter-stage[hidden]{display:flex!important}.chapter-stage{position:relative!important;min-height:100vh!important}.chapter{height:auto!important}#still-world{opacity:1!important}.main-nav{display:none}.hero-lower{position:relative!important;left:auto!important;bottom:auto!important;padding:2rem}.world{position:fixed}.contact-stage{padding:6rem 2rem!important}</style><div class="noscript-links"><a href="https://godbite.bandcamp.com/">Listen on Bandcamp ↗</a><a href="https://www.youtube.com/godbiteband">Films on YouTube ↗</a><a href="mailto:godbite@gmail.com">godbite@gmail.com</a></div></noscript>
   <script type="module" src="/src/main.ts"></script>

@@ -37,8 +37,7 @@ let worldGeneration = 0;
 const ambient = new Ambient(()=>updateControls());
 const releaseDialog = $<HTMLDialogElement>('#release-dialog');
 const filmDialog = $<HTMLDialogElement>('#film-dialog');
-const creditsDialog = $<HTMLDialogElement>('#credits-dialog');
-const dialogs = [releaseDialog, filmDialog, creditsDialog];
+const dialogs = [releaseDialog, filmDialog];
 const releaseList = $('#release-list');
 const filmList = $('#film-list');
 const still = $('#still-world');
@@ -199,7 +198,6 @@ dialogs.forEach(dialog=>{
 });
 $('#previous-release').addEventListener('click',()=>{selectedRelease=(selectedRelease+4)%5;updateRelease();});
 $('#next-release').addEventListener('click',()=>{selectedRelease=(selectedRelease+1)%5;updateRelease();});
-$('#credits-button').addEventListener('click',()=>openDialog(creditsDialog));
 $('#cinema-play').addEventListener('click',()=>openFilm(selectedFilm.id));
 function stopLive(){
   livePlayer?.destroy();livePlayer=undefined;$('#live-play').hidden=false;$('#live-stop').hidden=true;
@@ -315,7 +313,7 @@ function resetRetreat(){
 function canRetreat(target: EventTarget | null){
   // Short-screen copy has its own native scrolling; do not turn it into a retreat gesture.
   const stage=target instanceof Element?target.closest<HTMLElement>('.hero-stage'):null;
-  if(stage&&stage.scrollHeight>stage.clientHeight+1)return false;
+  if(stage&&retreat===0&&stage.scrollHeight>stage.clientHeight+1)return false;
   return !stillMode&&Boolean(world)&&!reducedMotion.matches&&scrollY<=0&&!dialogs.some(dialog=>dialog.open)
     &&!(target instanceof Element&&target.closest('a,button,input,textarea,select,iframe'));
 }

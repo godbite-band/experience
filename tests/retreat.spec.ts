@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-test('backwards wheel at the start plays the decoded Skyrim sample once and allows returning',async({page})=>{
+test('backwards wheel at the start plays the decoded Skyrim sample once and allows returning',async({page},testInfo)=>{
+  // CDP wheel distances are device pixels inside an emulated mobile scroll container.
+  const wheel=(pixels:number)=>page.mouse.wheel(0,pixels*(testInfo.project.use.isMobile?(testInfo.project.use.deviceScaleFactor??1):1));
   const errors:string[]=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>{
@@ -35,13 +37,13 @@ test('backwards wheel at the start plays the decoded Skyrim sample once and allo
   await expect.poll(()=>page.evaluate(()=>(window as any).cameraFrames.length)).toBeGreaterThan(0);
   const startZ=await page.evaluate(()=>(window as any).cameraFrames.at(-1).z);
   await page.mouse.move(20,300);
-  await page.mouse.wheel(0,-1000);
+  await wheel(-1000);
   await page.waitForTimeout(900);
   expect(await page.evaluate(()=>(window as any).sampleStarts)).toBe(0);
-  await page.mouse.wheel(0,-1600);
+  await wheel(-1600);
   await expect.poll(()=>page.evaluate(()=>(window as any).sampleStarts),{timeout:15000}).toBe(1);
   await expect(page.locator('body')).toHaveAttribute('data-easter-egg','playing');
-  await page.mouse.wheel(0,-2600);
+  await wheel(-2600);
   await page.screenshot({path:'test-results/skyrim-playing.png'});
   await expect(page.locator('body')).toHaveAttribute('data-easter-egg','fading');
   await expect(page.locator('body')).toHaveAttribute('data-easter-egg','returning');
@@ -60,13 +62,13 @@ test('backwards wheel at the start plays the decoded Skyrim sample once and allo
   expect(await page.evaluate(()=>(window as any).sampleStarts)).toBe(1);
   expect(await page.evaluate(()=>scrollY)).toBe(0);
   // End of the sample resets retreat, so the very next forward scroll advances.
-  await page.mouse.wheel(0,600);
+  await wheel(600);
   await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(0);
   await page.locator('.brand').click();
   await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
   await page.locator('#sound-toggle').click();
   await page.mouse.move(20,300);
-  await page.mouse.wheel(0,-2600);
+  await wheel(-2600);
   await page.waitForTimeout(1800);
   expect(await page.evaluate(()=>(window as any).sampleStarts)).toBe(1);
   expect(errors).toEqual([]);
@@ -120,7 +122,18 @@ test('the red sound invitation sits below the forest text and unlocks audio with
   const poem=await page.locator('.hero-poem').boundingBox(),invitation=await hint.boundingBox();
   const logo=await page.locator('#hero-title').boundingBox();
   expect(invitation!.y).toBeGreaterThanOrEqual(poem!.y+poem!.height);
-  expect(await hint.evaluate(element=>getComputedStyle(element).color)).toBe('rgb(204, 23, 62)');
+  const contrast=await hint.evaluate(element=>{
+    const style=getComputedStyle(element);
+    const color=style.color.match(/[\d.]+/g)!.map(Number),background=style.backgroundColor.match(/[\d.]+/g)!.map(Number);
+    // A light backdrop is the worst case for this dark, translucent invitation.
+    const alpha=background[3]??1;
+    const luminance=(rgb:number[])=>rgb.slice(0,3).map(value=>{
+      const channel=value/255;return channel<=.04045?channel/12.92:((channel+.055)/1.055)**2.4;
+    }).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);
+    const foreground=luminance(color),behind=luminance(background.slice(0,3).map(value=>value*alpha+255*(1-alpha)));
+    return (Math.max(foreground,behind)+.05)/(Math.min(foreground,behind)+.05);
+  });
+  expect(contrast).toBeGreaterThanOrEqual(4.5);
   await page.screenshot({path:'test-results/sound-invitation.png'});
   await page.mouse.click(invitation!.x+invitation!.width/2,invitation!.y+invitation!.height/2);
   await expect(page.locator('body')).toHaveAttribute('data-sound','playing');
