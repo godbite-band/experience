@@ -1,0 +1,11 @@
+import sharp from 'sharp';
+import { writeFile } from 'node:fs/promises';
+const input=process.argv[2]||new URL('../public/favicon.png',import.meta.url);
+const source=await sharp(input).resize(512,512).png().toBuffer();
+await writeFile(new URL('../public/favicon.png',import.meta.url),source);
+for(const size of [16,32,180])await writeFile(new URL('../public/'+(size===180?'apple-touch-icon.png':`favicon-${size}.png`),import.meta.url),await sharp(source).resize(size,size).png().toBuffer());
+const frames=await Promise.all([16,32,48].map(size=>sharp(source).resize(size,size).png().toBuffer()));
+const header=Buffer.alloc(6+16*frames.length);header.writeUInt16LE(1,2);header.writeUInt16LE(frames.length,4);
+let offset=header.length;
+frames.forEach((frame,i)=>{const start=6+i*16,size=[16,32,48][i];header[start]=header[start+1]=size;header.writeUInt16LE(1,start+4);header.writeUInt16LE(32,start+6);header.writeUInt32LE(frame.length,start+8);header.writeUInt32LE(offset,start+12);offset+=frame.length;});
+await writeFile(new URL('../public/favicon.ico',import.meta.url),Buffer.concat([header,...frames]));

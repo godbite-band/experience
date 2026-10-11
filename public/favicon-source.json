@@ -1,0 +1,6 @@
+{
+  "sourceArtwork": "Social Media Girls cover supplied by Godbite",
+  "method": "Built-in imagegen, followed by icon-size and format conversion",
+  "prompt": "Crop only the mannequin face on the right for a square favicon. Preserve the existing face, expression, gold eyes, dark blue/purple distressed texture and original orientation. No lettering, gun or additional symbols.",
+  "regenerateSizes": "node scripts/prepare-favicon.mjs"
+}
