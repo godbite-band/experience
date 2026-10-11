@@ -43,6 +43,17 @@ const releaseList = $('#release-list');
 const filmList = $('#film-list');
 const still = $('#still-world');
 
+// Reserve the measured frame space, including wrapped navigation and larger text.
+function updateFrameMetrics(){
+  const root=document.documentElement;
+  root.style.setProperty('--navigation-height',$('.main-nav').getBoundingClientRect().height+'px');
+  root.style.setProperty('--masthead-height',$('.masthead').getBoundingClientRect().height+'px');
+  root.style.setProperty('--footer-height',$('.frame-footer').getBoundingClientRect().height+'px');
+}
+const frameObserver=new ResizeObserver(updateFrameMetrics);
+for(const selector of ['.main-nav','.masthead','.frame-footer'])frameObserver.observe($(selector));
+updateFrameMetrics();
+
 function link(label: string, href: string) {
   const element = document.createElement('a');
   element.href = href; element.target = '_blank'; element.rel = 'noopener noreferrer';
@@ -302,6 +313,9 @@ function resetRetreat(){
   updateSoundInvitation();
 }
 function canRetreat(target: EventTarget | null){
+  // Short-screen copy has its own native scrolling; do not turn it into a retreat gesture.
+  const stage=target instanceof Element?target.closest<HTMLElement>('.hero-stage'):null;
+  if(stage&&stage.scrollHeight>stage.clientHeight+1)return false;
   return !stillMode&&Boolean(world)&&!reducedMotion.matches&&scrollY<=0&&!dialogs.some(dialog=>dialog.open)
     &&!(target instanceof Element&&target.closest('a,button,input,textarea,select,iframe'));
 }
