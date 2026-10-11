@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the /godbite/ address printed by Vite. Production: `npm run build`, then `npm run preview`.
+Open the /experience/ address printed by Vite. Production: `npm run build`, then `npm run preview`.
 
 ## Update music and films
 
@@ -35,8 +35,8 @@ Tests cover all recordings and films, lazy media loading, keyboard dialogs, lang
 
 ## GitHub Pages
 
-The repository is `hoRacy/godbite`, default branch `master`; Vite's base is `/godbite/`.
-Select **Settings → Pages → Source: GitHub Actions**. Pushes to master check types, build and test all five browser projects, then publish to **https://horacy.github.io/godbite/**. For a manual deployment, select **Actions → Publish Godbite → Run workflow → master**. Deployment is skipped cleanly until Pages is enabled. No separate build branch is needed.
+The repository is `godbite-band/experience`, default branch `master`; Vite's base is `/experience/`.
+Select **Settings → Pages → Source: GitHub Actions**. Pushes to master check types and build the site, then publish to **https://godbite-band.github.io/experience/**. For a manual deployment, select **Actions → Publish Godbite → Run workflow → master**. Deployment is skipped cleanly until Pages is enabled. No separate build branch is needed.
 
 The canonical URL, social metadata, sitemap and robots file use that address. Update them and Vite's base together if moving to a custom domain. No secrets, backend, analytics, or third-party scripts are used at startup. YouTube is contacted only after a visitor starts a film. Ambient sound is enabled by default and starts automatically when allowed, or with the first click, tap or keyboard interaction when the browser blocks autoplay. A deliberate mute is remembered for the tab session. Film playback temporarily silences the ambient and closing the film restores it.
 

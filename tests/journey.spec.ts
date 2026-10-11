@@ -20,7 +20,7 @@ test('first frame, working assets, default ambient and lazy film playback',async
   const errors:string[]=[],missing:string[]=[];
   page.on('pageerror',error=>errors.push(error.message));
   page.on('console',message=>{if(message.type()==='error'&&/Shader Error|VALIDATE_STATUS|ERROR: 0:/.test(message.text()))errors.push(message.text());});
-  page.on('response',response=>{if(response.url().includes('/godbite/')&&response.status()>=400)missing.push(response.url());});
+  page.on('response',response=>{if(response.url().includes('/experience/')&&response.status()>=400)missing.push(response.url());});
   await page.goto('./');
   await expect(page.locator('#hero-title')).toBeVisible();
   await expect(page.locator('.main-nav')).toBeVisible();

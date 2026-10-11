@@ -3,8 +3,8 @@ const chromiumLaunch={executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE|
 export default defineConfig({
   testDir:'./tests',workers:1,timeout:process.env.CI?60000:35000,expect:{timeout:8000},
   reporter:[['list'],['html',{open:'never'}]],
-  use:{baseURL:'http://127.0.0.1:4173/godbite/',trace:'retain-on-failure',screenshot:'only-on-failure'},
-  webServer:{command:'npm run preview -- --port 4173',url:'http://127.0.0.1:4173/godbite/',reuseExistingServer:!process.env.CI},
+  use:{baseURL:'http://127.0.0.1:4173/experience/',trace:'retain-on-failure',screenshot:'only-on-failure'},
+  webServer:{command:'npm run preview -- --port 4173',url:'http://127.0.0.1:4173/experience/',reuseExistingServer:!process.env.CI},
   projects:[
     {name:'chrome',use:{...devices['Desktop Chrome'],launchOptions:chromiumLaunch}},
     {name:'firefox',use:{...devices['Desktop Firefox']}},

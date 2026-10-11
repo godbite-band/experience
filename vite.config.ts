@@ -1,2 +1,2 @@
 import { defineConfig } from 'vite';
-export default defineConfig({ base: '/godbite/', build: { target: 'es2022', sourcemap: true } });
+export default defineConfig({ base: '/experience/', build: { target: 'es2022', sourcemap: true } });
