@@ -6,6 +6,7 @@ import './style.css';
 import { asset, copy, films, releases, socials, tracklists, liveConcert, secretConcert } from './content';
 import type { Chapter, Language } from './content';
 import { Ambient } from './ambient';
+import { VideoPlayer } from './video-player';
 import { SCENE_ANCHORS, RETREAT_LIMIT, RETREAT_TRIGGER, activeRecording, atmospherePresence, chapterPresentation, liveFigureStillBounds } from './journey';
 import type { World } from './world';
 
@@ -20,6 +21,9 @@ try { if (localStorage.getItem('godbite-language') === 'pl') language = 'pl'; } 
 let selectedRelease = 0;
 let currentRecording = -1;
 let selectedFilm = films[0];
+let cinemaPlayer: VideoPlayer | undefined;
+let livePlayer: VideoPlayer | undefined;
+let dialogPlayer: VideoPlayer | undefined;
 
 let lastInvoker: HTMLElement | null = null;
 const invokers = new WeakMap<HTMLDialogElement, HTMLElement>();
@@ -105,11 +109,13 @@ function showRecording(index: number){
 }
 function syncModalState() {
   const open=dialogs.some(dialog=>dialog.open);
-  const livePlaying=Boolean($('#live-screen-player').childElementCount);
+  const livePlaying=Boolean(livePlayer);
   document.body.classList.toggle('modal-open',open);
   document.body.classList.toggle('live-playing',livePlaying);
-  ambient.setBlocked(filmDialog.open||livePlaying);
+  document.body.classList.toggle('cinema-playing',Boolean(cinemaPlayer));
+  ambient.setBlocked(filmDialog.open||livePlaying||Boolean(cinemaPlayer));
   world?.setLivePlaying(livePlaying);
+  world?.setCinemaPlaying(Boolean(cinemaPlayer));
   if(stillMode)updateStill();
 }
 function openDialog(dialog: HTMLDialogElement) {
@@ -124,28 +130,39 @@ function openRelease(index: number) {
   updateRelease();openDialog(releaseDialog);
 }
 function selectFilm(id: string) {
+  const playing=Boolean(cinemaPlayer);
+  const changed=selectedFilm.id!==id;
   selectedFilm=films.find(film=>film.id===id) ?? films[0];
   $('#cinema-title').textContent=selectedFilm.title;
   $('#film-kind').textContent=copy[language][selectedFilm.kind==='video'?'film':'visualiser'];
   filmList.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.film===id)));
   world?.selectFilm(id);
   if(stillMode)updateStill();
+  if(playing&&changed)startCinema();
 }
 function openFilm(id: string) {
   selectFilm(id);
-  openProjection(selectedFilm.title,selectedFilm.youtubeId,'cinema');
+  navigate('cinema',true);
+  startCinema();
+}
+function startCinema(){
+  stopLive();stopCinema();
+  for(const dialog of dialogs)if(dialog.open)dialog.close();
+  cinemaPlayer=new VideoPlayer($('#cinema-screen-player'),selectedFilm.title,selectedFilm.youtubeId,language);
+  $('#cinema-play').hidden=true;$('#cinema-stop').hidden=false;
+  syncModalState();
+}
+function stopCinema(){
+  cinemaPlayer?.destroy();cinemaPlayer=undefined;
+  $('#cinema-play').hidden=false;$('#cinema-stop').hidden=true;
+  syncModalState();
 }
 function openProjection(title:string,youtubeId:string,kind:'cinema'|'club'){
-  stopLive();
+  stopLive();stopCinema();dialogPlayer?.destroy();
   $('#projection-kind').dataset.i18n=kind;$('#projection-kind').textContent=copy[language][kind];
   $('#projection-title').textContent=title;
   $<HTMLAnchorElement>('#external-film').href='https://www.youtube.com/watch?v='+youtubeId;
-  const frame=document.createElement('iframe');
-  frame.title=title;
-  frame.src='https://www.youtube-nocookie.com/embed/'+youtubeId+'?autoplay=1&rel=0&playsinline=1';
-  frame.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';frame.allowFullscreen=true;
-  frame.referrerPolicy='strict-origin-when-cross-origin';
-  $('#film-player').replaceChildren(frame);openDialog(filmDialog);
+  dialogPlayer=new VideoPlayer($('#film-player'),title,youtubeId,language);openDialog(filmDialog);
 }
 for(const [selector,direction] of [['#previous-film',-1],['#next-film',1]] as const){
   $(selector).addEventListener('click',()=>{
@@ -161,7 +178,7 @@ dialogs.forEach(dialog=>{
     if(event.clientX<bounds.left || event.clientX>bounds.right || event.clientY<bounds.top || event.clientY>bounds.bottom)dialog.close();
   });
   dialog.addEventListener('close',()=>{
-    if(dialog===filmDialog)$('#film-player').replaceChildren();
+    if(dialog===filmDialog){dialogPlayer?.destroy();dialogPlayer=undefined;}
     syncModalState();
     if(!dialogs.some(item=>item.open)){
       const trigger=invokers.get(dialog);
@@ -174,19 +191,22 @@ $('#next-release').addEventListener('click',()=>{selectedRelease=(selectedReleas
 $('#credits-button').addEventListener('click',()=>openDialog(creditsDialog));
 $('#cinema-play').addEventListener('click',()=>openFilm(selectedFilm.id));
 function stopLive(){
-  $('#live-screen-player').replaceChildren();$('#live-play').hidden=false;$('#live-stop').hidden=true;
+  livePlayer?.destroy();livePlayer=undefined;$('#live-play').hidden=false;$('#live-stop').hidden=true;
   syncModalState();
 }
 $('#live-play').addEventListener('click',()=>{
-  const frame=document.createElement('iframe');
-  frame.title=liveConcert.title;
-  frame.src='https://www.youtube-nocookie.com/embed/'+liveConcert.youtubeId+'?autoplay=1&rel=0&playsinline=1';
-  frame.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';frame.allowFullscreen=true;
-  frame.referrerPolicy='strict-origin-when-cross-origin';
-  $('#live-screen-player').replaceChildren(frame);$('#live-play').hidden=true;$('#live-stop').hidden=false;
+  stopCinema();stopLive();
+  livePlayer=new VideoPlayer($('#live-screen-player'),liveConcert.title,liveConcert.youtubeId,language);
+  $('#live-play').hidden=true;$('#live-stop').hidden=false;
   syncModalState();
 });
 $('#live-stop').addEventListener('click',()=>{stopLive();$('#live-play').focus({preventScroll:true});});
+$('#cinema-stop').addEventListener('click',()=>{stopCinema();$('#cinema-play').focus({preventScroll:true});});
+document.addEventListener('keydown',event=>{
+  if(event.key!=='Escape'||dialogs.some(dialog=>dialog.open)||document.fullscreenElement)return;
+  if(cinemaPlayer){stopCinema();$('#cinema-play').focus({preventScroll:true});}
+  else if(livePlayer){stopLive();$('#live-play').focus({preventScroll:true});}
+});
 $('#secret-figure').addEventListener('click',()=>openProjection(secretConcert.title,secretConcert.youtubeId,'club'));
 document.querySelectorAll<HTMLButtonElement>('[data-play]').forEach(button=>button.addEventListener('click',()=>openFilm(button.dataset.play!)));
 $('#sound-toggle').addEventListener('click',()=>{void ambient.toggle();});
@@ -255,6 +275,8 @@ function translate() {
   $('#previous-film').setAttribute('aria-label',text.previousFilm);$('#next-film').setAttribute('aria-label',text.nextFilm);
   $('#secret-figure').setAttribute('aria-label',text.secretFigure);
   $('#live-stop').setAttribute('aria-label',text.stopLive);
+  $('#cinema-stop').setAttribute('aria-label',text.stopLive);
+  for(const player of [cinemaPlayer,livePlayer,dialogPlayer])player?.translate(language);
   document.querySelectorAll('[data-close]').forEach(button=>button.setAttribute('aria-label',text.close));
   $('#previous-release').setAttribute('aria-label',text.previous);$('#next-release').setAttribute('aria-label',text.next);
   $('#chapter-name').textContent=text[chapterKeys[currentChapter]];
@@ -335,6 +357,13 @@ function updateStill(){
   const scene=chapters[currentChapter];
   const image=scene==='cinema'&&selectedFilm.id!==films[0].id?'cinema-'+selectedFilm.id:scene==='live'&&innerWidth<800?'live-mobile':scene;
   still.style.backgroundImage='url("'+asset('images/'+image+'.webp')+'")';
+  still.style.backgroundSize=scene==='cinema'&&innerWidth<800?`${innerWidth*1.61}px auto`:'cover';
+  if(scene==='cinema'){
+    // The fallback stills are 1600×1000; the projection's corners are (392,270) and (1207,729).
+    const scale=innerWidth<800?innerWidth*1.61/1600:Math.max(innerWidth/1600,innerHeight/1000);
+    const bounds={left:(innerWidth-1600*scale)/2+392*scale,top:(innerHeight-1000*scale)/2+270*scale,width:815*scale,height:459*scale};
+    for(const [key,value] of Object.entries(bounds))stages[2].style.setProperty('--cinema-'+key,value+'px');
+  }
   if(scene==='live')$('#still-live-playing').style.backgroundImage='url("'+asset('images/'+image+'-playing.webp')+'")';
   if(scene==='live')positionSecretFigure(liveFigureStillBounds(innerWidth,innerHeight));
 }
@@ -356,6 +385,7 @@ function updateJourney() {
   });
   currentChapter=index;
   if(index!==3&&$('#live-screen-player').childElementCount)stopLive();
+  if(index!==2&&cinemaPlayer)stopCinema();
   document.body.dataset.chapter=chapters[index];
   if(index!==2)world?.setFilmHovered(false);
   $('#chapter-name').textContent=copy[language][chapterKeys[index]];
@@ -407,6 +437,7 @@ projection.addEventListener('blur',()=>world?.setFilmHovered(false));
 function useStills() {
   resetRetreat();
   for(const key of ['left','top','width','height'])stages[3].style.removeProperty('--live-'+key);
+  for(const key of ['left','top','width','height'])stages[2].style.removeProperty('--cinema-'+key);
   stillMode=true;document.body.classList.add('still-mode');document.body.classList.remove('scene-ready');
   world?.destroy();world=undefined;
   updateJourney();
@@ -421,6 +452,8 @@ async function startWorld() {
       const stage=stages[3];
       stage.style.setProperty('--live-left',bounds.x+'px');stage.style.setProperty('--live-top',bounds.y+'px');
       stage.style.setProperty('--live-width',bounds.width+'px');stage.style.setProperty('--live-height',bounds.height+'px');
+    },onCinemaScreen:bounds=>{
+      for(const [key,value] of Object.entries({left:bounds.x,top:bounds.y,width:bounds.width,height:bounds.height}))stages[2].style.setProperty('--cinema-'+key,value+'px');
     },onSecretFigure:positionSecretFigure,onRetreat:p=>{
       const demand=(ambient.state==='off'||ambient.state==='waiting')?Math.pow(Math.max(0,-p),3):0;
       document.body.style.setProperty('--sound-demand',String(demand));
@@ -453,6 +486,7 @@ async function startWorld() {
     stillMode=false;document.body.classList.remove('still-mode');
     world.setProgress(progress());
     world.setLivePlaying(Boolean($('#live-screen-player').childElementCount));
+    world.setCinemaPlaying(Boolean(cinemaPlayer));
     if(selectedFilm.id!==films[0].id)world.selectFilm(selectedFilm.id);
   } catch {useStills();}
 }

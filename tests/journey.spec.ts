@@ -3,6 +3,18 @@ import sharp from 'sharp';
 
 test.beforeEach(async ({page})=>{
   await page.route('https://www.youtube-nocookie.com/**',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><html><body>Test projection</body></html>'}));
+  await page.route('https://www.youtube.com/iframe_api',route=>route.fulfill({contentType:'text/javascript',body:`
+    window.YT={Player:class {
+      constructor(frame,options){this.frame=frame;this.events=options.events;this.state=1;this.time=0;setTimeout(()=>this.events.onReady(),0)}
+      playVideo(){this.state=1;this.events.onStateChange()}
+      pauseVideo(){this.state=2;this.events.onStateChange()}
+      seekTo(time){this.time=time;this.events.onStateChange()}
+      getPlayerState(){return this.state}
+      getCurrentTime(){return this.time}
+      getDuration(){return 120}
+      destroy(){this.frame.remove()}
+    }};window.onYouTubeIframeAPIReady();
+  `}));
 });
 test('first frame, working assets, default ambient and lazy film playback',async({page})=>{
   const errors:string[]=[],missing:string[]=[];
@@ -71,8 +83,9 @@ test('all four films use the right player and closing removes playback',async({p
   const films=[['social-media-girls','y5Bw0fB5nU8'],['walkin-phoenix','KlZBHri5y1Q'],['tarrare-52','p68ABWJqxCI'],['elbow-grease','Fu1c32l8bqk']];
   for(const [id,youtube] of films){
     await page.locator('[data-film='+id+']').click();await page.locator('#cinema-play').click();
-    await expect(page.locator('#film-player iframe')).toHaveAttribute('src',new RegExp('/embed/'+youtube+'\\?'));
-    await expect(page.locator('#external-film')).toHaveAttribute('href','https://www.youtube.com/watch?v='+youtube);
+    await expect(page.locator('#cinema-screen-player iframe')).toHaveAttribute('src',new RegExp('/embed/'+youtube+'\\?'));
+    await expect(page.locator('#film-dialog')).not.toBeVisible();
+    await expect(page.locator('#cinema-screen-player a')).toHaveAttribute('href','https://www.youtube.com/watch?v='+youtube);
     await page.keyboard.press('Escape');await expect(page.locator('iframe')).toHaveCount(0);
   }
 });
@@ -104,8 +117,8 @@ for(const reducedMotion of ['no-preference','reduce'] as const){
   await page.keyboard.press('Enter');await expect(page.locator('#film-dialog')).toBeVisible();
   await page.keyboard.press('Escape');await page.locator('[data-nav=cinema]').click();
   await expect(figure).not.toBeVisible();await page.locator('#cinema-play').click();
-  await expect(page.locator('#projection-kind')).toHaveText('The cinema');
-  await expect(page.locator('#film-player iframe')).toHaveAttribute('src',/embed\/y5Bw0fB5nU8\?/);
+  await expect(page.locator('#film-dialog')).not.toBeVisible();
+  await expect(page.locator('#cinema-screen-player iframe')).toHaveAttribute('src',/embed\/y5Bw0fB5nU8\?/);
   expect(errors).toEqual([]);
  });
 }

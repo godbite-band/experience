@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { asset, films, releases, liveConcert } from './content';
 import { CinematicLens, type PortalGlow } from './cinematic';
+import { seatOverlapsScreen, type ScreenBounds } from './cinema-seats';
 import { cameraRoute, activeRecording, atmospherePresence, forestDoor, forestTreePosition, interiorLayout, interiorPoint, scenePresence, CAMERA_HEIGHT, RETREAT_LIMIT, liveFigurePosition } from './journey';
 
 const clamp = THREE.MathUtils.clamp;
@@ -115,6 +116,7 @@ export interface WorldOptions {
   onRetreat?: (progress: number) => void;
   onFilm?: () => void;
   onLiveScreen?: (bounds:{x:number;y:number;width:number;height:number}) => void;
+  onCinemaScreen?: (bounds:{x:number;y:number;width:number;height:number}) => void;
   onSecretFigure?: (bounds:{x:number;y:number;width:number;height:number}|null) => void;
 }
 export class World {
@@ -140,6 +142,11 @@ export class World {
   private filmHover = 0;
   private ritual = new THREE.Group();
   private cinema = new THREE.Group();
+  private cinemaPlaying=false;
+  private cinemaSeatBounds:THREE.Box3[]=[];
+  private cinemaSeatVisibility=new THREE.InstancedBufferAttribute(new Float32Array(84).fill(1),1);
+  private cinemaSeatsSettled=true;
+  private seatFadeStep=1/48;
   private live = new THREE.Group();
   private liveScreen!: THREE.Mesh<THREE.PlaneGeometry,THREE.MeshBasicMaterial>;
   private liveTextureLoading=false;
@@ -500,14 +507,30 @@ export class World {
     shape.quadraticCurveTo(.44,1,0,1);shape.quadraticCurveTo(-.44,1,-.44,.65);shape.closePath();
     const backGeometry=new THREE.ExtrudeGeometry(shape,{depth:.14,bevelEnabled:true,bevelThickness:.05,bevelSize:.05,bevelSegments:2,steps:1,curveSegments:5});
     const seatsMaterial=new THREE.MeshStandardMaterial({color:'#281019',roughness:.88});
+    seatsMaterial.transparent=true;
+    seatsMaterial.onBeforeCompile=shader=>{
+      shader.vertexShader=shader.vertexShader.replace('#include <common>',
+        '#include <common>\nattribute float cinemaSeatVisibility;\nvarying float vSeatVisibility;')
+        .replace('#include <begin_vertex>','#include <begin_vertex>\nvSeatVisibility=cinemaSeatVisibility;');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <common>',
+        '#include <common>\nvarying float vSeatVisibility;')
+        .replace('#include <color_fragment>',
+          '#include <color_fragment>\ndiffuseColor.a*=smoothstep(0.,1.,vSeatVisibility);\nif(diffuseColor.a<.001)discard;');
+    };
+    seatsMaterial.customProgramCacheKey=()=> 'cinema-seat-fade';
     const backrests=new THREE.InstancedMesh(backGeometry,seatsMaterial,84);
     const cushions=new THREE.InstancedMesh(new THREE.BoxGeometry(.88,.16,.85),seatsMaterial,84);
+    backGeometry.computeBoundingBox();cushions.geometry.computeBoundingBox();
+    for(const geometry of [backGeometry,cushions.geometry])geometry.setAttribute('cinemaSeatVisibility',this.cinemaSeatVisibility);
+    this.cinemaSeatVisibility.setUsage(THREE.DynamicDrawUsage);
     const object=new THREE.Object3D();let count=0;
     for(let row=0;row<7;row++){
       for(let column=0;column<12;column++){
         const x=(column-5.5)*1.3+(column<6?-.8:.8),z=7+row*2.15;
         object.position.set(x,.42+row*.07,z);object.rotation.set(0,Math.PI,0);object.scale.set(1,1,1);object.updateMatrix();backrests.setMatrixAt(count,object.matrix);
+        const bounds=backGeometry.boundingBox!.clone().applyMatrix4(object.matrix);
         object.position.set(x,.38+row*.07,z-.45);object.rotation.set(0,0,0);object.updateMatrix();cushions.setMatrixAt(count,object.matrix);count++;
+        bounds.union(cushions.geometry.boundingBox!.clone().applyMatrix4(object.matrix));this.cinemaSeatBounds.push(bounds);
       }
     }
     this.cinema.add(backrests,cushions);
@@ -805,6 +828,22 @@ export class World {
   }
   setPaused(paused: boolean) { this.paused=paused; }
   setLivePlaying(playing:boolean){this.livePlaying=playing;}
+  setCinemaPlaying(playing:boolean){
+    if(this.cinemaPlaying===playing)return;
+    this.cinemaPlaying=playing;this.cinemaSeatsSettled=false;
+  }
+  private updateCinemaSeats(screen:ScreenBounds|null){
+    let changed=false;this.cinemaSeatsSettled=true;
+    for(let index=0;index<this.cinemaSeatBounds.length;index++){
+      const hide=this.cinemaPlaying&&screen&&seatOverlapsScreen(this.cinemaSeatBounds[index],this.cinema.matrixWorld,
+        this.camera,screen,innerWidth,innerHeight);
+      const target=hide?0:1,current=this.cinemaSeatVisibility.getX(index);
+      const next=current+clamp(target-current,-this.seatFadeStep,this.seatFadeStep);
+      if(next!==current){this.cinemaSeatVisibility.setX(index,next);changed=true;}
+      if(next!==target)this.cinemaSeatsSettled=false;
+    }
+    if(changed)this.cinemaSeatVisibility.needsUpdate=true;
+  }
   private resize=()=>{
     this.camera.aspect=innerWidth/innerHeight;
     this.camera.fov=innerWidth<800?58:44;
@@ -925,6 +964,17 @@ export class World {
     this.setPresence(this.cinema,presence.cinema);
     this.setPresence(this.live,presence.live);
     this.setPresence(this.liveDrums,presence.live*smooth(this.drumVisibility,0,1));
+    let cinemaScreen:ScreenBounds|null=null;
+    if(p>1.8&&p<2.65){
+      this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld();
+      const screen=this.screens[0];
+      const topLeft=screen.localToWorld(new THREE.Vector3(-5.865,3.3,0)).project(this.camera);
+      const bottomRight=screen.localToWorld(new THREE.Vector3(5.865,-3.3,0)).project(this.camera);
+      cinemaScreen={x:(topLeft.x+1)*innerWidth/2,y:(1-topLeft.y)*innerHeight/2,width:(bottomRight.x-topLeft.x)*innerWidth/2,height:(topLeft.y-bottomRight.y)*innerHeight/2};
+      this.options.onCinemaScreen?.(cinemaScreen);
+    }
+    // Include the slim controls below the video: they occupy the same foreground DOM layer.
+    this.updateCinemaSeats(cinemaScreen?{...cinemaScreen,height:cinemaScreen.height+40}:null);
     if(p>2.6&&p<3.6){
       this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld();
       const topLeft=this.liveScreen.localToWorld(new THREE.Vector3(-5.8,3.2625,0)).project(this.camera);
@@ -967,8 +1017,9 @@ export class World {
     const elapsed=this.lastTime?(now-this.lastTime)/1000:1/60,delta=Math.min(elapsed,.1);this.lastTime=now;
     const settled=Math.abs(this.progress-this.targetProgress)<.0001&&Math.abs(this.progressVelocity)<.0001;
     const drumTarget=this.livePlaying?0:1,drumsSettled=this.drumVisibility===drumTarget;
-    if(this.paused && settled && drumsSettled)return;
+    if(this.paused && settled && drumsSettled&&this.cinemaSeatsSettled)return;
     const fadeStep=elapsed/.8;
+    this.seatFadeStep=fadeStep;
     this.drumVisibility+=clamp(drumTarget-this.drumVisibility,-fadeStep,fadeStep);
     // A playback fade may render while paused, without moving the settled camera.
     if(!this.paused || !settled){
