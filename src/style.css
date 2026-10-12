@@ -19,6 +19,11 @@
 .video-controls a{white-space:nowrap;padding:10px 0;font-size:9px}
 .video-time{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:9px;color:var(--muted)}
 .video-status{position:absolute;top:calc(100% + 40px);left:0;font-size:9px;line-height:1.7;background:#080909e6}
+.release-links .release-youtube{border-bottom:1px solid #e8e3d833;padding:10px 0;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:11px;letter-spacing:.08em;min-height:44px}
+.release-links .release-youtube:hover{border-color:var(--red)}
+.release-youtube span{color:var(--red)}
+.release-player{grid-column:1/-1;width:100%;aspect-ratio:16/9;background:#000}
+.release-player iframe{display:block;width:100%;height:100%;border:0}
 .film-player.video-player{display:block;margin-bottom:40px}
 .film-player.video-player iframe{position:static}
 .video-player:fullscreen{position:fixed;inset:0;width:100%;height:100%;background:#000;padding-bottom:44px;aspect-ratio:auto;margin:0}

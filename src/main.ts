@@ -38,6 +38,7 @@ let world: World | undefined;
 let worldGeneration = 0;
 const ambient = new Ambient(()=>updateControls());
 const releaseDialog = $<HTMLDialogElement>('#release-dialog');
+const releasePlayer = $('#release-player');
 const filmDialog = $<HTMLDialogElement>('#film-dialog');
 const dialogs = [releaseDialog, filmDialog];
 const releaseList = $('#release-list');
@@ -96,6 +97,7 @@ films.forEach((film,index)=>{
 
 function updateRelease() {
   const release=releases[selectedRelease],text=copy[language];
+  if(releasePlayer.dataset.release!==release.id)stopRelease();
   const cover=$<HTMLImageElement>('#release-cover');
   cover.src=asset('images/cover-'+release.cover+'.webp');cover.alt=release.title;
   $('#release-title').textContent=release.title;
@@ -104,7 +106,30 @@ function updateRelease() {
   const container=$('#release-links');container.replaceChildren();
   if(release.spotify)container.append(link('Spotify',release.spotify));
   container.append(link('Bandcamp',release.bandcamp));
+  if(release.youtube){
+    const button=document.createElement('button');
+    button.type='button';button.className='release-youtube';button.textContent='YouTube';
+    button.setAttribute('aria-label',text.listen+' / '+release.title+' / YouTube');
+    button.setAttribute('aria-controls','release-player');
+    const icon=document.createElement('span');icon.textContent='▷';icon.setAttribute('aria-hidden','true');button.append(icon);
+    button.addEventListener('click',()=>{
+      stopCinema();stopLive();
+      const params=new URLSearchParams({autoplay:'1',rel:'0',playsinline:'1',controls:'1',hl:language});
+      if(release.youtube!.playlistId)params.set('list',release.youtube!.playlistId);
+      const frame=document.createElement('iframe');
+      frame.src=`https://www.youtube-nocookie.com/embed/${release.youtube!.videoId}?${params}`;
+      frame.title=release.title+' / YouTube';frame.allow='autoplay; encrypted-media; picture-in-picture; fullscreen';
+      frame.allowFullscreen=true;frame.referrerPolicy='strict-origin-when-cross-origin';
+      releasePlayer.replaceChildren(frame);releasePlayer.dataset.release=release.id;releasePlayer.hidden=false;
+      syncModalState();releasePlayer.scrollIntoView({block:'nearest'});
+    });
+    container.append(button);
+  }
   $('#release-position').textContent=String(selectedRelease+1).padStart(2,'0')+' / 05';
+}
+function stopRelease(){
+  releasePlayer.replaceChildren();releasePlayer.hidden=true;delete releasePlayer.dataset.release;
+  syncModalState();
 }
 function showRecording(index: number){
   if(index===currentRecording)return;
@@ -125,7 +150,7 @@ function syncModalState() {
   document.body.classList.toggle('modal-open',open);
   document.body.classList.toggle('live-playing',livePlaying);
   document.body.classList.toggle('cinema-playing',Boolean(cinemaPlayer));
-  ambient.setBlocked(filmDialog.open||livePlaying||Boolean(cinemaPlayer));
+  ambient.setBlocked(filmDialog.open||livePlaying||Boolean(cinemaPlayer)||!releasePlayer.hidden);
   world?.setLivePlaying(livePlaying);
   world?.setCinemaPlaying(Boolean(cinemaPlayer));
   if(stillMode)updateStill();
@@ -190,6 +215,7 @@ dialogs.forEach(dialog=>{
     if(event.clientX<bounds.left || event.clientX>bounds.right || event.clientY<bounds.top || event.clientY>bounds.bottom)dialog.close();
   });
   dialog.addEventListener('close',()=>{
+    if(dialog===releaseDialog)stopRelease();
     if(dialog===filmDialog){dialogPlayer?.destroy();dialogPlayer=undefined;}
     syncModalState();
     if(!dialogs.some(item=>item.open)){

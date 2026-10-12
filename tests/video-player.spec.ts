@@ -53,6 +53,40 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   });
 }
 
+test('Listen plays the supplied recordings and clears playback on release changes and close', async ({ page }, testInfo) => {
+  await page.goto('./');
+  await page.locator('[data-nav=music]').click();
+  await page.locator('[data-release=social-media-girls]').click();
+  const player=page.locator('#release-player');
+  for(const [videoId,playlistId] of [
+    ['y5Bw0fB5nU8',null],
+    ['YN1np0QDVSE','PLApLnRxRWEko7BaZJPDbWdZ6A10CEW-ti'],
+    ['thmmYZBgWyI','PLApLnRxRWEkpiqacnkRwS5Nb-4Ii8PTtm'],
+    ['j8-BAucyfOA','PLApLnRxRWEkpiqacnkRwS5Nb-4Ii8PTtm'],
+  ]){
+    await expect(player.locator('iframe')).toHaveCount(0);
+    await page.locator('.release-youtube').click();
+    await expect(player.locator('iframe')).toBeVisible();
+    const url=new URL((await player.locator('iframe').getAttribute('src'))!);
+    expect(url.pathname).toBe('/embed/'+videoId);
+    expect(url.searchParams.get('list')).toBe(playlistId);
+    expect(url.searchParams.get('autoplay')).toBe('1');
+    expect(url.searchParams.get('controls')).toBe('1');
+    await expect(page.locator('iframe')).toHaveCount(1);
+    expect(await page.locator('#release-dialog').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth)).toBe(true);
+    await page.locator('#next-release').click();
+  }
+  await expect(player.locator('iframe')).toHaveCount(0);
+  await expect(page.locator('.release-youtube')).toHaveCount(0);
+  await page.locator('#previous-release').click();
+  await page.locator('.release-youtube').click();
+  await page.screenshot({path:testInfo.outputPath('listen-player.png')});
+  await page.keyboard.press('Escape');
+  await expect(page.locator('iframe')).toHaveCount(0);
+  await page.locator('[data-release=social-media-girls]').click();
+  await expect(player).toBeHidden();
+});
+
 test('API failure restores native controls and keeps the YouTube link', async ({ page }) => {
   await page.route('https://www.youtube.com/iframe_api', route => route.abort());
   await page.goto('./'); await page.locator('[data-nav=cinema]').click(); await page.locator('#cinema-play').click();

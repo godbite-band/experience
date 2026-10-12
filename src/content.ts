@@ -5,6 +5,7 @@ export const secretConcert={youtubeId:'ql6nWvkPoUI',title:'Godrite — Secret li
 export interface Release {
   id: string; title: string; year: number; kind: 'album' | 'ep' | 'single';
   cover: string; bandcamp: string; spotify?: string; artwork?: string;
+  youtube?: { videoId: string; playlistId?: string };
 }
 export const tracklists: Record<string, readonly (readonly [string,string?])[]> = {
   'social-media-girls': [['Social Media Girls','08:21']],
@@ -18,10 +19,10 @@ export interface Film {
 }
 export const asset = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 export const releases: Release[] = [
-  { id: 'social-media-girls', title: 'Social Media Girls', year: 2026, kind: 'single', cover: 'social-media-girls', bandcamp: 'https://godbite.bandcamp.com/album/social-media-girls', spotify: 'https://open.spotify.com/album/4yji0Hoa0DhRDht4PMfB3z', artwork: 'Trash Boat' },
-  { id: 'jism', title: 'JISM', year: 2025, kind: 'ep', cover: 'jism', bandcamp: 'https://godbite.bandcamp.com/album/jism', spotify: 'https://open.spotify.com/album/7nYGh0vFxKyXKLRSkCtpOz', artwork: 'Trash Boat' },
-  { id: 'mir', title: 'Mir', year: 2023, kind: 'album', cover: 'mir', bandcamp: 'https://godbite.bandcamp.com/album/mir', spotify: 'https://open.spotify.com/album/4Rdud3cjsccagcNbBwBRhk', artwork: 'Artur Ciechorski' },
-  { id: 'the-aristocrats', title: 'the Aristocrats', year: 2015, kind: 'album', cover: 'the-aristocrats', bandcamp: 'https://godbite.bandcamp.com/album/the-aristocrats', spotify: 'https://open.spotify.com/album/2bHyQF36UreAU70VC7mx3l' },
+  { id: 'social-media-girls', title: 'Social Media Girls', year: 2026, kind: 'single', cover: 'social-media-girls', bandcamp: 'https://godbite.bandcamp.com/album/social-media-girls', spotify: 'https://open.spotify.com/album/4yji0Hoa0DhRDht4PMfB3z', artwork: 'Trash Boat', youtube: { videoId: 'y5Bw0fB5nU8' } },
+  { id: 'jism', title: 'JISM', year: 2025, kind: 'ep', cover: 'jism', bandcamp: 'https://godbite.bandcamp.com/album/jism', spotify: 'https://open.spotify.com/album/7nYGh0vFxKyXKLRSkCtpOz', artwork: 'Trash Boat', youtube: { videoId: 'YN1np0QDVSE', playlistId: 'PLApLnRxRWEko7BaZJPDbWdZ6A10CEW-ti' } },
+  { id: 'mir', title: 'Mir', year: 2023, kind: 'album', cover: 'mir', bandcamp: 'https://godbite.bandcamp.com/album/mir', spotify: 'https://open.spotify.com/album/4Rdud3cjsccagcNbBwBRhk', artwork: 'Artur Ciechorski', youtube: { videoId: 'thmmYZBgWyI', playlistId: 'PLApLnRxRWEkpiqacnkRwS5Nb-4Ii8PTtm' } },
+  { id: 'the-aristocrats', title: 'the Aristocrats', year: 2015, kind: 'album', cover: 'the-aristocrats', bandcamp: 'https://godbite.bandcamp.com/album/the-aristocrats', spotify: 'https://open.spotify.com/album/2bHyQF36UreAU70VC7mx3l', youtube: { videoId: 'j8-BAucyfOA', playlistId: 'PLApLnRxRWEkpiqacnkRwS5Nb-4Ii8PTtm' } },
   { id: 'horse', title: 'You can lead a horse EP', year: 2011, kind: 'ep', cover: 'demo', bandcamp: 'https://godbite.bandcamp.com/album/demo', spotify: 'https://open.spotify.com/album/2dEzIU90xRp9QfZoYCWYD2' },
 ];
 export const films: Film[] = [
