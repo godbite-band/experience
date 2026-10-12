@@ -37,13 +37,13 @@ test('backwards wheel at the start plays the decoded Skyrim sample once and allo
   await expect.poll(()=>page.evaluate(()=>(window as any).cameraFrames.length)).toBeGreaterThan(0);
   const startZ=await page.evaluate(()=>(window as any).cameraFrames.at(-1).z);
   await page.mouse.move(20,300);
-  await wheel(-1000);
+  await wheel(1000);
   await page.waitForTimeout(900);
   expect(await page.evaluate(()=>(window as any).sampleStarts)).toBe(0);
-  await wheel(-1600);
+  await wheel(1600);
   await expect.poll(()=>page.evaluate(()=>(window as any).sampleStarts),{timeout:15000}).toBe(1);
   await expect(page.locator('body')).toHaveAttribute('data-easter-egg','playing');
-  await wheel(-2600);
+  await wheel(2600);
   await page.screenshot({path:'test-results/skyrim-playing.png'});
   await expect(page.locator('body')).toHaveAttribute('data-easter-egg','fading');
   await expect(page.locator('body')).toHaveAttribute('data-easter-egg','returning');
@@ -62,13 +62,13 @@ test('backwards wheel at the start plays the decoded Skyrim sample once and allo
   expect(await page.evaluate(()=>(window as any).sampleStarts)).toBe(1);
   expect(await page.evaluate(()=>scrollY)).toBe(0);
   // End of the sample resets retreat, so the very next forward scroll advances.
-  await wheel(600);
+  await wheel(-600);
   await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(0);
   await page.locator('.brand').click();
   await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
   await page.locator('#sound-toggle').click();
   await page.mouse.move(20,300);
-  await wheel(-2600);
+  await wheel(2600);
   await page.waitForTimeout(1800);
   expect(await page.evaluate(()=>(window as any).sampleStarts)).toBe(1);
   expect(errors).toEqual([]);
@@ -149,11 +149,11 @@ test('muted retreat enlarges the invitation and clicking it starts the secret wi
   await expect(page.locator('body')).toHaveClass(/scene-ready/);
   const hint=page.locator('#sound-hint'),font=()=>hint.evaluate(element=>parseFloat(getComputedStyle(element).fontSize));
   await expect(hint).toBeHidden();
-  await page.mouse.move(20,300);await page.mouse.wheel(0,-1000);
+  await page.mouse.move(20,300);await page.mouse.wheel(0,1000);
   await expect(hint).toBeVisible();
   await expect.poll(font).toBeGreaterThan(9.05);
   const halfway=await font();
-  for(let i=0;i<8;i++)await page.mouse.wheel(0,-1600);
+  for(let i=0;i<8;i++)await page.mouse.wheel(0,1600);
   await expect.poll(font).toBeGreaterThan(halfway*2);
   await page.waitForTimeout(600);
   const bounds=await hint.boundingBox(),size=await font();
@@ -167,7 +167,7 @@ test('reduced motion keeps the normal start without loading the secret audio',as
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('./');
   await expect(page.locator('body')).toHaveClass(/still-mode/);
-  await page.mouse.wheel(0,-2600);
+  await page.mouse.wheel(0,2600);
   await page.waitForTimeout(300);
   expect(await page.evaluate(()=>performance.getEntriesByType('resource').some(entry=>entry.name.includes('never-should-have')))).toBe(false);
   expect(await page.evaluate(()=>scrollY)).toBe(0);

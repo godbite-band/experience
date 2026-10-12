@@ -102,6 +102,11 @@ body[data-easter-egg='fading'] .world::after{animation:secret-light-chaos 1.1s l
 @keyframes sound-whisper{0%,100%{transform:translate(0,0);opacity:.85}40%{transform:translate(1px,-2px);opacity:1}70%{transform:translate(-1px,1px);opacity:.9}}
 @media(prefers-reduced-motion:reduce){.hero-heading .sound-hint{animation:none}}
 html,body{overscroll-behavior-y:none}
+/* Scene swipes are handled by the journey, not the browser's root scroller. */
+@media(pointer:coarse){
+  html.journey-input{overflow:hidden;touch-action:pan-x pinch-zoom}
+  html.journey-input :is(.hero-stage,.contact-stage,.band-stage,.release-list,.cinema-lower,.live-lower,dialog){touch-action:pan-y pinch-zoom;overscroll-behavior-y:contain}
+}
 
 /* Keep overflowing copy inside the frame, clear of the fixed navigation. */
 .contact-stage{inset:calc(var(--masthead-height,96px) + 12px) 0 calc(var(--footer-height,90px) + 16px);padding:16px var(--edge);overflow-y:auto;pointer-events:auto;overscroll-behavior:auto;scrollbar-width:thin;align-items:flex-start}

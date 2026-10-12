@@ -17,6 +17,7 @@ const sections = chapters.map(id => $('#'+id));
 const stages = sections.map(section => section.querySelector<HTMLElement>('.chapter-stage')!);
 const chapterKeys = ['threshold', 'music', 'cinema', 'club', 'bandRoom', 'signal'] as const;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+document.documentElement.classList.add('journey-input');
 let language: Language = 'en';
 try { if (localStorage.getItem('godbite-language') === 'pl') language = 'pl'; } catch { /* Storage can be unavailable in private browser contexts. */ }
 let selectedRelease = 0;
@@ -325,36 +326,108 @@ function moveRetreat(delta: number){
   else resetRetreat();
   requestJourney();
 }
+function nestedScroller(target:EventTarget|null){
+  let element=target instanceof Element?target:null;
+  while(element&&element!==document.body&&element!==document.documentElement){
+    if(element instanceof HTMLElement&&element.scrollHeight>element.clientHeight+1&&/auto|scroll/.test(getComputedStyle(element).overflowY))return element;
+    element=element.parentElement;
+  }
+  return null;
+}
+function canScroll(element:HTMLElement,pixels:number){
+  return pixels<0?element.scrollTop>1:element.scrollTop+element.clientHeight<element.scrollHeight-1;
+}
+let wheelFrame=0;
+let wheelMotion:{scroller:HTMLElement|null;position:number;target:number;written:number;time:number;direction:number}|null=null;
+function stopWheelScroll(){
+  cancelAnimationFrame(wheelFrame);wheelFrame=0;wheelMotion=null;
+}
+function smoothWheelScroll(pixels:number,scroller:HTMLElement|null=null){
+  if(!pixels)return;
+  const current=scroller?scroller.scrollTop:scrollY;
+  const maximum=scroller?scroller.scrollHeight-scroller.clientHeight:document.documentElement.scrollHeight-document.documentElement.clientHeight;
+  if(reducedMotion.matches){
+    stopWheelScroll();
+    if(scroller)scroller.scrollBy({top:pixels,behavior:'instant'});
+    else window.scrollBy({top:pixels,behavior:'instant'});
+    return;
+  }
+  const direction=Math.sign(pixels);
+  if(!wheelMotion||wheelMotion.scroller!==scroller||wheelMotion.direction!==direction||Math.abs(current-wheelMotion.written)>2){
+    stopWheelScroll();
+    wheelMotion={scroller,position:current,target:current,written:current,time:performance.now(),direction};
+  }
+  // Accumulate every high-resolution wheel delta instead of restarting an animation per event.
+  wheelMotion.target=Math.max(0,Math.min(maximum,wheelMotion.target+pixels));
+  if(wheelFrame)return;
+  wheelMotion.time=performance.now();
+  const frame=(time:number)=>{
+    const motion=wheelMotion;
+    if(!motion)return;
+    const actual=motion.scroller?motion.scroller.scrollTop:scrollY;
+    if(Math.abs(actual-motion.written)>2){stopWheelScroll();return;}
+    const elapsed=Math.max(0,time-motion.time);motion.time=time;
+    motion.position+=(motion.target-motion.position)*(1-Math.exp(-elapsed/65));
+    const settled=Math.abs(motion.target-motion.position)<.5;
+    if(settled)motion.position=motion.target;
+    if(motion.scroller)motion.scroller.scrollTo({top:motion.position,behavior:'instant'});
+    else window.scrollTo({top:motion.position,behavior:'instant'});
+    motion.written=motion.scroller?motion.scroller.scrollTop:scrollY;
+    // Keep fractional input after settling; tiny trackpad deltas must not disappear.
+    if(settled)wheelFrame=0;
+    else wheelFrame=requestAnimationFrame(frame);
+  };
+  wheelFrame=requestAnimationFrame(frame);
+}
+function moveJourney(pixels:number,target:EventTarget|null,smooth=false){
+  if(retreat<0||(canRetreat(target)&&scrollY<=0&&pixels<0)){
+    stopWheelScroll();moveRetreat(pixels/2400);return;
+  }
+  if(smooth)smoothWheelScroll(pixels);
+  else window.scrollBy({top:pixels,behavior:'instant'});
+}
 addEventListener('wheel',event=>{
   if(event.ctrlKey)return;
   if(secretPlaying){event.preventDefault();return;}
-  if(!canRetreat(event.target))return;
-  if(event.deltaY>=0&&retreat===0)return;
-  event.preventDefault();
+  if(dialogs.some(dialog=>dialog.open)||Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
+  const scroller=nestedScroller(event.target);
   const pixels=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?innerHeight:1);
-  moveRetreat(pixels/2400);
+  event.preventDefault();
+  // Use the same wheel direction in copy and scenes, then leave copy at its edge.
+  if(retreat===0&&scroller&&canScroll(scroller,-pixels)){
+    smoothWheelScroll(-pixels,scroller);return;
+  }
+  moveJourney(-pixels,event.target,true);
 },{passive:false});
+for(const type of ['pointerdown','keydown','resize'])addEventListener(type,stopWheelScroll,{passive:true});
 let retreatTouch: {id:number;x:number;y:number;target:EventTarget|null} | null=null;
 addEventListener('touchstart',event=>{
+  stopWheelScroll();
   retreatTouch=null;
-  if(event.touches.length!==1||(!secretPlaying&&!canRetreat(event.target)))return;
+  if(event.touches.length!==1||dialogs.some(dialog=>dialog.open)
+    ||(event.target instanceof Element&&event.target.closest('input,textarea,select,iframe')))return;
   const touch=event.touches[0];
   retreatTouch={id:touch.identifier,x:touch.clientX,y:touch.clientY,target:event.target};
 },{passive:true});
 addEventListener('touchmove',event=>{
   if(event.touches.length!==1){retreatTouch=null;return;}
   if(secretPlaying){if(event.cancelable)event.preventDefault();return;}
-  if(!retreatTouch||!canRetreat(retreatTouch.target))return;
+  if(!retreatTouch)return;
   const touch=event.touches[0];
   if(touch.identifier!==retreatTouch.id)return;
   const dx=touch.clientX-retreatTouch.x,dy=touch.clientY-retreatTouch.y;
-  // Leave horizontal gestures and native forward scrolling to the browser.
+  // Own vertical gestures from their first movement, before Chrome pans its toolbar.
   if(Math.abs(dx)>Math.abs(dy)&&retreat===0){retreatTouch=null;return;}
   retreatTouch.x=touch.clientX;retreatTouch.y=touch.clientY;
-  if(dy<=0&&retreat===0)return;
+  // Native copy scrolling owns the gesture only while it can move in that direction.
+  // A new swipe at its boundary must be allowed to return to the journey.
+  const scroller=nestedScroller(retreatTouch.target);
+  if(retreat===0&&scroller&&canScroll(scroller,-dy))return;
   if(!event.cancelable)return;
   event.preventDefault();
-  moveRetreat(-dy/Math.max(360,innerHeight*.7));
+  if(retreat<0||(canRetreat(retreatTouch.target)&&scrollY<=0&&dy>0)){
+    moveRetreat(-dy/Math.max(360,innerHeight*.7));
+  }else moveJourney(-dy,retreatTouch.target);
 },{passive:false});
 for(const type of ['touchend','touchcancel'])addEventListener(type,()=>{retreatTouch=null;},{passive:true});
 function progress(){
@@ -418,6 +491,7 @@ addEventListener('scroll',requestJourney,{passive:true});
 addEventListener('resize',requestJourney,{passive:true});
 
 function navigate(chapter: Chapter, instant=false) {
+  stopWheelScroll();
   resetRetreat();requestJourney();
   const section=$('#'+chapter);
   history.replaceState(null,'','#'+chapter);

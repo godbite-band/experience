@@ -1,4 +1,4 @@
-# Godbite — a white forest without windows
+# GODBITE — alternative rock / progressive metal from Szczecin, Poland
 
 A native-scroll journey through six Three.js scenes: the threshold, ritual, cinema, live club, dressing room and signal. Vite, TypeScript, semantic HTML, local fonts and original Godbite artwork. English and Polish, pulsing synthesized ambient, enabled by default, and still-image fallback.
 

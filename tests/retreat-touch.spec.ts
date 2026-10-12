@@ -1,15 +1,15 @@
 import { test, expect, type CDPSession } from '@playwright/test';
 
-async function swipe(session:CDPSession,from:number,to:number){
-  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:20,y:from}]});
+async function swipe(session:CDPSession,from:number,to:number,x=20){
+  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:from}]});
   for(let i=1;i<=10;i++){
-    await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:20,y:from+(to-from)*i/10}]});
+    await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:from+(to-from)*i/10}]});
     await new Promise(resolve=>setTimeout(resolve,25));
   }
   await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
 }
 
-test('Android-style downward swipes retreat without refreshing and upward swipes restore normal scrolling',async({page,context,isMobile,browserName})=>{
+test('Android-style downward swipes retreat without refreshing and upward swipes restore forward navigation',async({page,context,isMobile,browserName})=>{
   test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
   await page.addInitScript(()=>sessionStorage.setItem('godbite-sound','off'));
   await page.goto('./');
@@ -33,7 +33,31 @@ test('Android-style downward swipes retreat without refreshing and upward swipes
   }finally{await session.detach();}
 });
 
-test('touch swipes play the Easter Egg and return before native scrolling resumes',async({page,context,isMobile,browserName})=>{
+test('mobile contact copy scrolls and allows returning from its top boundary',async({page,context,isMobile,browserName})=>{
+  test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
+  await page.setViewportSize({width:393,height:600});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto('./');
+  await page.evaluate(()=>window.scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'}));
+  await expect(page.locator('body')).toHaveAttribute('data-chapter','contact');
+  const stage=page.locator('.contact-stage'),bounds=(await stage.boundingBox())!;
+  const rootPosition=await page.evaluate(()=>scrollY);
+  const session=await context.newCDPSession(page);
+  try{
+    await swipe(session,bounds.y+bounds.height-20,bounds.y+20,bounds.x+10);
+    await expect.poll(()=>stage.evaluate(element=>element.scrollTop)).toBeGreaterThan(20);
+    expect(await page.evaluate(()=>scrollY)).toBe(rootPosition);
+    await stage.evaluate(element=>element.scrollTo({top:element.scrollHeight,behavior:'instant'}));
+    await swipe(session,bounds.y+20,bounds.y+bounds.height-20,bounds.x+10);
+    await expect.poll(()=>stage.evaluate(element=>element.scrollTop)).toBe(0);
+    // Keep swiping over CONTACT itself; never use the menu or the frame to escape.
+    for(let i=0;i<3;i++)await swipe(session,bounds.y+20,bounds.y+bounds.height-20,bounds.x+10);
+    await expect.poll(()=>page.evaluate(()=>scrollY)).toBeLessThan(rootPosition-100);
+    await expect(page.locator('body')).not.toHaveAttribute('data-chapter','contact');
+  }finally{await session.detach();}
+});
+
+test('touch swipes play the Easter Egg and return before forward navigation resumes',async({page,context,isMobile,browserName})=>{
   test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
   test.setTimeout(45000);
   await page.addInitScript(()=>{
@@ -55,5 +79,21 @@ test('touch swipes play the Easter Egg and return before native scrolling resume
   await expect(page.locator('body')).not.toHaveAttribute('data-easter-egg',/playing|fading|returning/);
   await swipe(session,650,180);
   await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(100);
+  }finally{await session.detach();}
+});
+
+test('the first upward swipe advances and downward swipe returns without native root panning',async({page,context,isMobile,browserName})=>{
+  test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
+  await page.goto('./');
+  await expect(page.locator('body')).toHaveClass(/scene-ready/);
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY)).toBe('hidden');
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).touchAction)).toBe('pan-x pinch-zoom');
+  const session=await context.newCDPSession(page);
+  try{
+    await swipe(session,650,180);
+    await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(300);
+    const advanced=await page.evaluate(()=>scrollY);
+    await swipe(session,180,500);
+    await expect.poll(()=>page.evaluate(()=>scrollY)).toBeLessThan(advanced-200);
   }finally{await session.detach();}
 });
