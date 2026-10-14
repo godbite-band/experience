@@ -4,7 +4,7 @@ import ts from 'typescript';
 
 const synthesis=ts.transpileModule(readFileSync(new URL('../src/ambient.ts',import.meta.url),'utf8'),{
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
-}).outputText.replace(/\bexport /g,'');
+}).outputText.replace(/^import .*$/gm,'').replace(/\bexport /g,'');
 
 test('the real ambient waveform swells, pulses and has stereo movement without clipping',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});

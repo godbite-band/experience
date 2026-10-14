@@ -1,3 +1,4 @@
+import { HuntAudio } from './hunt-audio';
 export type SoundState = 'waiting' | 'playing' | 'off' | 'unavailable' | 'film';
 
 function modulation(context: BaseAudioContext, frequency: number, depth: number, target: AudioParam) {
@@ -93,6 +94,8 @@ export class Ambient {
   private resuming=false;
   private lastResume=0;
   private progress=0;
+  private huntActive=false;
+  private huntAudio?:HuntAudio;
   private sample?: AudioBuffer;
   private sampleLoading?: Promise<void>;
   private sampleGain?: GainNode;
@@ -159,6 +162,19 @@ export class Ambient {
     }
   }
   setBlocked(blocked: boolean){this.blocked=blocked;this.update();}
+  setHunt(active:boolean){
+    this.huntActive=active;
+    try{if(active&&!this.context&&this.enabled&&!this.unavailable)this.create();this.update();}catch{this.fail();}
+  }
+  playHuntHit(){this.huntAudio?.hit();}
+  prepareHunt(){
+    if(!this.enabled||this.unavailable)return;
+    try{if(!this.context)this.create();void this.huntAudio?.prepare();}catch{this.fail();}
+  }
+  playHuntUnlock(){
+    if(!this.enabled||this.unavailable)return;
+    void this.unlock().then(()=>this.huntAudio?.hit());
+  }
   prepareSample(url: string){
     if(this.sampleLoading)return this.sampleLoading;
     this.sampleLoading=(async()=>{
@@ -202,10 +218,12 @@ export class Ambient {
     this.sampleGain=context.createGain();this.sampleGain.gain.value=.7;
     this.sampleGain.connect(context.destination);
     this.graph=createAtmosphere(context,this.gain);
+    this.huntAudio=new HuntAudio(context);
     context.addEventListener('statechange',()=>this.update());
     this.setProgress(this.progress);
   }
   private fail(){
+    this.huntAudio?.setActive(false);
     this.unavailable=true;this.enabled=false;
     if(this.context)void this.context.close().catch(()=>{});
     this.changed();
@@ -229,7 +247,8 @@ export class Ambient {
         source.start();
         this.sampleCallbacks?.start();
       }
-      this.gain.gain.setTargetAtTime(audible?.32:0,this.context.currentTime,audible?.65:.055);
+      this.huntAudio?.setActive(audible&&this.huntActive);
+      this.gain.gain.setTargetAtTime(audible&&!this.huntActive?.32:0,this.context.currentTime,audible?.65:.055);
     }
     this.changed();
   }
