@@ -3,6 +3,8 @@ import { asset, films, releases, liveConcert } from './content';
 import { CinematicLens, type PortalGlow } from './cinematic';
 import { createDressingRoom } from './dressing-room';
 import { seatOverlapsScreen, type ScreenBounds } from './cinema-seats';
+import { createForestFigure, createSigilStone, EYE_RADIUS, FIGURE_POSITION } from './forest-secret';
+import { firstPersonLayout, crossedFpsDoor, moveFpsPlayer, turnFpsView, type FpsDoor, type FpsRoom } from './first-person';
 import { cameraRoute, activeRecording, atmospherePresence, forestDoor, forestTreePosition, interiorLayout, interiorPoint, scenePresence, CAMERA_HEIGHT, RETREAT_LIMIT, liveFigurePosition, LIVE_SCREEN_Z, bandDoorOpening } from './journey';
 
 const clamp = THREE.MathUtils.clamp;
@@ -119,6 +121,8 @@ export interface WorldOptions {
   onLiveScreen?: (bounds:{x:number;y:number;width:number;height:number}) => void;
   onCinemaScreen?: (bounds:{x:number;y:number;width:number;height:number}) => void;
   onSecretFigure?: (bounds:{x:number;y:number;width:number;height:number}|null) => void;
+  onForestSecret?: (mode:'none'|'eyes'|'fps') => void;
+  onFpsProgress?: (progress:number) => void;
 }
 export class World {
   private renderer: THREE.WebGLRenderer;
@@ -155,6 +159,32 @@ export class World {
   private livePlaying=false;
   private drumVisibility=1;
   private secretFigure=new THREE.Group();
+  private forestFigure=createForestFigure();
+  private forestSecretMode:'none'|'eyes'|'fps'='none';
+  private eyeDigits=[0,0,0,0];
+  private eyeButtons:HTMLButtonElement[]=[];
+  private hoveredEye=-1;
+  private eyePulses=[0,0,0,0];
+  private fpsUnlocked=false;
+  private eyeApproach: {start:number;from:THREE.Vector3;rotation:THREE.Quaternion}|null=null;
+  private fpsPosition=new THREE.Vector3();
+  private fpsYaw=0;
+  private fpsPitch=0;
+  private fpsDrag:{id:number;x:number;y:number}|null=null;
+  private fpsSkipLockedMove=false;
+  private fpsLookHint:HTMLElement|null=null;
+  private fpsKeys=new Set<string>();
+  private fpsRoom:FpsRoom='gallery';
+  private fpsLayout=firstPersonLayout(innerWidth<800);
+  private fpsLayoutMobile=innerWidth<800;
+  private fpsPassages=new THREE.Group();
+  private fpsRoomLabel:HTMLElement|null=null;
+  private fpsTransition:{started:number;door:FpsDoor;landing:THREE.Vector3;arrived:boolean}|null=null;
+  private firedStones:THREE.Group[]=[];
+  private flyingStones:{stone:THREE.Group;from:THREE.Vector3;to:THREE.Vector3;started:number;duration:number}[]=[];
+  private shotCooldown=0;
+  private secretHud:HTMLDivElement;
+  private figureTrigger:HTMLButtonElement;
   private signal = new THREE.Group();
   private band = new THREE.Group();
   private bandExitDoor: THREE.Group;
@@ -165,6 +195,7 @@ export class World {
   private coverMaterials: THREE.MeshBasicMaterial[] = [];
   private reflections: THREE.MeshBasicMaterial[] = [];
   private filmTextures = new Map<string, THREE.Texture>();
+  private filmTextureRequests=new Set<string>();
   private coversLoaded = false;
   private targetProgress = 0;
   private progress = 0;
@@ -212,8 +243,17 @@ export class World {
     this.scene.add(this.whiteLight, this.whiteLight.target);
     this.redLight.position.set(0, 3, -24); this.scene.add(this.redLight);
     this.scene.add(this.secretLight);
-    this.scene.add(this.forest,this.interior);
+    this.scene.add(this.forest,this.interior,this.fpsPassages);
     this.forest.add(this.terrain);
+    this.forest.add(this.forestFigure.group);
+    this.figureTrigger=document.createElement('button');this.figureTrigger.type='button';
+    this.figureTrigger.className='forest-figure-trigger';this.figureTrigger.hidden=true;
+    this.figureTrigger.setAttribute('aria-label','Postać za drzewem');
+    this.figureTrigger.addEventListener('click',()=>this.beginForestEncounter());
+    document.body.append(this.figureTrigger);
+    this.secretHud=document.createElement('div');
+    this.secretHud.className='forest-secret-hud';this.secretHud.hidden=true;
+    document.body.append(this.secretHud);
     const dressingRoom=createDressingRoom();this.band=dressingRoom.group;this.bandExitDoor=dressingRoom.exitDoor;this.timeMaterials.push(dressingRoom.mirror);
     this.interior.add(this.ritual,this.cinema,this.live,this.band,this.signal,this.exitGate);
     this.makeForest();
@@ -224,6 +264,7 @@ export class World {
     this.makeLive();
     this.makeSignal();
     this.makeDust();
+    this.makeFpsPassages();
     for(const group of [this.forest,this.terrain,this.ritual,this.cinema,this.live,this.band,this.signal,this.exitGate])this.prepareFade(group);
     this.prepareFade(this.liveDrums);
     this.resize();
@@ -231,6 +272,15 @@ export class World {
     addEventListener('pointermove', this.movePointer, { passive: true });
     addEventListener('pointerdown', this.pointerDown, { passive: true });
     addEventListener('pointerup', this.pickOffering);
+    addEventListener('pointerup',this.endFpsDrag);
+    addEventListener('pointercancel',this.endFpsDrag);
+    addEventListener('contextmenu',this.fpsContextMenu);
+    document.body.addEventListener('lostpointercapture',this.endFpsDrag);
+    addEventListener('keydown',this.fpsKeyDown);
+    addEventListener('keyup',this.fpsKeyUp);
+    document.addEventListener('mousemove',this.fpsMouseMove);
+    addEventListener('blur',this.clearFpsKeys);
+    document.addEventListener('pointerlockchange',this.fpsPointerLockChange);
     document.addEventListener('visibilitychange', this.visibility);
     options.canvas.addEventListener('webglcontextlost', this.contextLost);
     this.render(0);
@@ -797,6 +847,51 @@ export class World {
     this.timeMaterials.push(material);this.scene.add(new THREE.Points(geometry,material));
   }
 
+  private makeFpsPassages(){
+    const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>();
+    this.fpsPassages.traverse(object=>{
+      if(!(object instanceof THREE.Mesh))return;
+      geometries.add(object.geometry);
+      for(const material of Array.isArray(object.material)?object.material:[object.material]){
+        materials.add(material);if('map' in material&&material.map instanceof THREE.Texture)textures.add(material.map);
+      }
+    });
+    this.fpsPassages.clear();geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());
+    const rim=new THREE.MeshBasicMaterial({color:'#b72c45',toneMapped:false,fog:false});
+    const dark=new THREE.MeshBasicMaterial({color:'#010204',side:THREE.DoubleSide});
+    for(const door of this.fpsLayout.doors){
+      const portal=new THREE.Group();portal.position.set(door.position[0],0,door.position[2]);
+      portal.userData.fpsRoom=door.room;portal.userData.portalId=door.id;
+      const opening=new THREE.Mesh(new THREE.PlaneGeometry(door.width,door.height),dark);
+      opening.position.y=door.height/2;portal.add(opening);
+      for(const side of [-1,1]){
+        const jamb=new THREE.Mesh(new THREE.BoxGeometry(.035,door.height,.055),rim);
+        jamb.position.set(side*door.width/2,door.height/2,.025);portal.add(jamb);
+      }
+      const lintel=new THREE.Mesh(new THREE.BoxGeometry(door.width,.035,.055),rim);
+      lintel.position.set(0,door.height,.025);portal.add(lintel);
+      const canvas=document.createElement('canvas');canvas.width=128;canvas.height=64;
+      const ctx=canvas.getContext('2d')!;ctx.font='24px serif';ctx.fillStyle='#b14c61';ctx.textAlign='center';ctx.fillText(door.label,64,40);
+      const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+      const label=new THREE.Mesh(new THREE.PlaneGeometry(.9,.45),new THREE.MeshBasicMaterial({map:texture,transparent:true,side:THREE.DoubleSide,toneMapped:false,fog:false,depthWrite:false}));
+      label.position.set(0,door.height+.45,.05);portal.add(label);
+      const glow=new THREE.PointLight('#b82240',28,9,1.6);glow.position.set(0,.6,.8);portal.add(glow);
+      this.fpsPassages.add(portal);
+    }
+    const floor=new THREE.Mesh(new THREE.PlaneGeometry(38,42),new THREE.MeshStandardMaterial({color:'#121016',roughness:1,emissive:'#050208'}));
+    floor.rotation.x=-Math.PI/2;floor.position.fromArray(this.fpsLayout.signalFloor);floor.position.y=-.04;
+    floor.userData.fpsRoom='signal';this.fpsPassages.add(floor);
+    const route=new THREE.Group();route.userData.fpsRoom='gallery';
+    const entry=this.fpsLayout.doors.find(door=>door.id==='gallery-cinema')!;
+    for(let z=entry.position[2]+4;z<entry.position[2]+23;z+=4){
+      for(const side of [-1,1]){
+        const mark=new THREE.Mesh(new THREE.BoxGeometry(.025,.018,1.2),rim);
+        mark.position.set(entry.position[0]+side*.9,.035,z);route.add(mark);
+      }
+    }
+    this.fpsPassages.add(route);this.fpsPassages.visible=false;
+  }
+
   private loadCovers() {
     if(this.coversLoaded)return;this.coversLoaded=true;
     const loader=new THREE.TextureLoader();
@@ -819,6 +914,8 @@ export class World {
     };
     const cached=this.filmTextures.get(id);
     if(cached){apply(cached);return;}
+    if(this.filmTextureRequests.has(id))return;
+    this.filmTextureRequests.add(id);
     new THREE.TextureLoader().load(asset('images/film-'+film.youtubeId+'.webp'),texture=>{
       texture.colorSpace=THREE.SRGBColorSpace;this.filmTextures.set(id,texture);
       // A slower response for a previously selected film must not replace the current one.
@@ -828,6 +925,175 @@ export class World {
   }
   private selectedFilm='social-media-girls';
   setFilmHovered(hovered:boolean){this.filmHoverControl=hovered;}
+
+  private setForestSecretMode(mode:'none'|'eyes'|'fps'){
+    this.forestSecretMode=mode;
+    this.endFpsDrag();this.fpsSkipLockedMove=false;
+    this.hoveredEye=-1;this.eyeButtons=[];
+    this.figureTrigger.hidden=true;
+    document.body.dataset.forestSecret=mode;
+    this.options.onForestSecret?.(mode);
+    this.secretHud.hidden=mode==='none';
+    this.secretHud.classList.remove('is-arrived');
+    this.secretHud.classList.remove('is-crossing');this.fpsTransition=null;
+    this.fpsRoomLabel=null;
+    this.fpsLookHint=null;
+    this.secretHud.replaceChildren();
+    if(mode==='none'){
+      delete document.body.dataset.fpsRoom;
+      this.fpsPassages.visible=false;
+      this.eyeApproach=null;this.fpsKeys.clear();
+      if(document.pointerLockElement===this.options.canvas)document.exitPointerLock();
+      document.body.style.cursor='';return;
+    }
+    const pl=document.documentElement.lang==='pl';
+    const close=document.createElement('button');close.type='button';
+    close.className='forest-secret-close';close.textContent='×';
+    close.setAttribute('aria-label',pl?'Zamknij zbliżenie':'Close the encounter');
+    close.addEventListener('click',()=>this.setForestSecretMode('none'));
+    this.secretHud.append(close);
+    if(mode==='eyes'){
+      const help=document.createElement('span');help.className='forest-secret-gesture';
+      help.textContent=pl?'Dotknij oka, aby zmienić przeklęty szyfr':'Touch an eye to shift the unholy cipher';
+      this.secretHud.append(help);
+      this.forestFigure.eyes.forEach((_,index)=>{
+        const button=document.createElement('button');button.type='button';button.className='forest-eye-control';
+        button.dataset.eye=String(index);button.dataset.digit=String(this.eyeDigits[index]);
+        button.setAttribute('aria-label',`Oko ${index+1}, cyfra ${this.eyeDigits[index]}`);
+        button.setAttribute('aria-keyshortcuts','ArrowUp ArrowDown 0 1 2 3 4 5 6 7 8 9');
+        const hint=document.createElement('span');hint.className='forest-eye-step';hint.textContent='+';hint.setAttribute('aria-hidden','true');button.append(hint);
+        button.addEventListener('click',()=>this.selectEyeDigit(index,this.eyeDigits[index]+1));
+        button.addEventListener('contextmenu',event=>{event.preventDefault();this.selectEyeDigit(index,this.eyeDigits[index]-1);});
+        button.addEventListener('keydown',event=>{
+          if(event.key==='ArrowUp'||event.key==='ArrowRight'){event.preventDefault();this.selectEyeDigit(index,this.eyeDigits[index]+1);}
+          else if(event.key==='ArrowDown'||event.key==='ArrowLeft'){event.preventDefault();this.selectEyeDigit(index,this.eyeDigits[index]-1);}
+          else if(/^[0-9]$/.test(event.key)){event.preventDefault();this.selectEyeDigit(index,Number(event.key));}
+        });
+        for(const type of ['pointerenter','focus'])button.addEventListener(type,()=>{this.hoveredEye=index;});
+        for(const type of ['pointerleave','blur'])button.addEventListener(type,()=>{if(this.hoveredEye===index)this.hoveredEye=-1;});
+        this.eyeButtons.push(button);this.secretHud.append(button);
+      });
+    }
+    if(mode==='fps'){
+      const text=document.createElement('p');text.className='forest-secret-invocation';
+      text.textContent=pl?'WSAD — ruch · Shift — bieg · mysz — obrót · klik — sigil · czerwone drzwi — przejścia':'WASD — move · Shift — sprint · mouse — look · click — sigil · red doorways — passages';
+      this.secretHud.append(text);
+      this.fpsLookHint=document.createElement('span');this.fpsLookHint.className='fps-look-hint';text.append(this.fpsLookHint);
+      this.fpsRoomLabel=document.createElement('span');this.fpsRoomLabel.className='fps-room-label';
+      this.fpsRoomLabel.setAttribute('role','status');this.secretHud.append(this.fpsRoomLabel);
+      const sight=document.createElement('span');sight.className='forest-secret-crosshair';sight.setAttribute('aria-hidden','true');
+      this.secretHud.append(sight);
+      const route=cameraRoute(this.progress,innerWidth<800);
+      this.fpsPosition.fromArray(route.position);
+      this.fpsYaw=Math.atan2(route.position[0]-route.target[0],route.position[2]-route.target[2]);this.fpsPitch=0;
+      this.enterFpsRoom('gallery');
+      this.updateFpsLookHint();
+      this.requestFpsPointerLock();
+    }
+  }
+  private selectEyeDigit(index:number,value:number){
+    if(this.forestSecretMode!=='eyes'||this.eyeApproach&&performance.now()-this.eyeApproach.start<1400)return;
+    this.eyeDigits[index]=(value+10)%10;
+    this.forestFigure.eyes[index].material.map=this.forestFigure.textures[this.eyeDigits[index]];
+    this.eyePulses[index]=performance.now();
+    const button=this.eyeButtons[index];
+    button.dataset.digit=String(this.eyeDigits[index]);
+    button.setAttribute('aria-label',`Oko ${index+1}, cyfra ${this.eyeDigits[index]}`);
+    if(this.eyeDigits.join('')==='2137'){this.fpsUnlocked=true;this.setForestSecretMode('fps');}
+  }
+  private hitsForestFigure(){
+    const hit=this.raycaster.intersectObjects([this.forestFigure.actor,this.forestFigure.tree],true)[0];
+    return Boolean(hit?.object.userData.forestFigure);
+  }
+  private beginForestEncounter(){
+    if(this.forestSecretMode!=='none'||this.progress<=.95||this.progress>=1.76)return;
+    this.targetProgress=this.progress;this.progressVelocity=0;
+    if(this.fpsUnlocked){this.setForestSecretMode('fps');return;}
+    this.eyeApproach={start:performance.now(),from:this.camera.position.clone(),rotation:this.camera.quaternion.clone()};
+    this.setForestSecretMode('eyes');
+  }
+  private fpsKeyDown=(event:KeyboardEvent)=>{
+    if(this.forestSecretMode==='none')return;
+    if(event.code==='Escape'){event.preventDefault();this.setForestSecretMode('none');return;}
+    if(this.forestSecretMode==='fps'&&event.code==='KeyR'){event.preventDefault();this.fpsPitch=0;return;}
+    if(this.forestSecretMode==='fps'&&['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight'].includes(event.code)){
+      event.preventDefault();this.fpsKeys.add(event.code);
+    }
+  };
+  private fpsKeyUp=(event:KeyboardEvent)=>{this.fpsKeys.delete(event.code);};
+  private clearFpsKeys=()=>{this.fpsKeys.clear();this.endFpsDrag();this.fpsSkipLockedMove=true;};
+  private fpsPointerLockChange=()=>{
+    if(document.pointerLockElement!==this.options.canvas)this.clearFpsKeys();
+    else this.endFpsDrag();
+    this.fpsSkipLockedMove=document.pointerLockElement===this.options.canvas;
+    this.updateFpsLookHint();
+  };
+  private updateFpsLookHint(){
+    if(this.forestSecretMode!=='fps'||!this.fpsLookHint)return;
+    const locked=document.pointerLockElement===this.options.canvas,pl=document.documentElement.lang==='pl';
+    this.secretHud.dataset.lookMode=locked?'locked':'drag';
+    this.fpsLookHint.textContent=locked?(pl?'R — wyprostuj widok':'R — level the view'):
+      (pl?'Obrót: przytrzymaj prawy przycisk myszy · R — wyprostuj widok':'Hold right mouse button to look · R — level the view');
+    document.body.style.cursor=locked?'none':'grab';
+  }
+  private requestFpsPointerLock(){
+    try{void Promise.resolve(this.options.canvas.requestPointerLock?.()).catch(()=>this.updateFpsLookHint());}
+    catch{this.updateFpsLookHint();}
+  }
+  private fpsMouseMove=(event:MouseEvent)=>{
+    if(this.forestSecretMode!=='fps'||document.pointerLockElement!==this.options.canvas||document.hidden||this.paused)return;
+    if(this.fpsSkipLockedMove){this.fpsSkipLockedMove=false;return;}
+    this.turnFpsCamera(event.movementX,event.movementY);
+  };
+  private turnFpsCamera(dx:number,dy:number){
+    const view=turnFpsView(this.fpsYaw,this.fpsPitch,dx,dy);this.fpsYaw=view.yaw;this.fpsPitch=view.pitch;
+  }
+  private endFpsDrag=()=>{
+    if(!this.fpsDrag)return;
+    const id=this.fpsDrag.id;this.fpsDrag=null;
+    if(document.body.hasPointerCapture(id))document.body.releasePointerCapture(id);
+    if(this.forestSecretMode==='fps')this.updateFpsLookHint();
+  };
+  private fpsContextMenu=(event:Event)=>{
+    if(this.forestSecretMode==='fps'&&!(event.target instanceof Element&&event.target.closest('button,a,dialog')))event.preventDefault();
+  };
+  private fpsProgress(){
+    return this.fpsLayout.rooms[this.fpsRoom].progress;
+  }
+  private enterFpsRoom(room:FpsRoom){
+    this.fpsRoom=room;document.body.dataset.fpsRoom=room;
+    const pl=document.documentElement.lang==='pl';
+    const labels:Record<FpsRoom,string>=pl?
+      {gallery:'I / Las',cinema:'II / Kino',live:'III / Klub',band:'IV / Garderoba',signal:'V / Sygnał'}:
+      {gallery:'I / Forest',cinema:'II / Cinema',live:'III / Club',band:'IV / Dressing room',signal:'V / Signal'};
+    if(this.fpsRoomLabel)this.fpsRoomLabel.textContent=labels[room];
+    this.loadSceneAssets(this.fpsProgress());this.options.onFpsProgress?.(this.fpsProgress());
+  }
+  private shootStone(){
+    if(performance.now()-this.shotCooldown<180)return;
+    this.shotCooldown=performance.now();
+    this.raycaster.setFromCamera(new THREE.Vector2(0,0),this.camera);
+    this.raycaster.far=45;
+    const targets=[this.terrain,this.forest,this.ritual,this.cinema,this.live,this.band,this.signal,this.fpsPassages];
+    const hit=this.raycaster.intersectObjects(targets,true).find(item=>{
+      if(item.distance<=.8)return false;
+      for(let object:THREE.Object3D|null=item.object;object;object=object.parent)if(!object.visible)return false;
+      if(item.object instanceof THREE.Mesh){
+        const materials=Array.isArray(item.object.material)?item.object.material:[item.object.material];
+        return materials.some(material=>material.visible&&material.opacity>.01);
+      }
+      return true;
+    });
+    const position=hit?.point.clone()??this.camera.position.clone().addScaledVector(this.raycaster.ray.direction,25);
+    const normal=hit?.face?.normal.clone().transformDirection(hit.object.matrixWorld)??this.raycaster.ray.direction.clone().negate();
+    const landing=position.addScaledVector(normal,.13);
+    const from=this.camera.position.clone().addScaledVector(this.raycaster.ray.direction,.85);
+    const stone=createSigilStone();stone.position.copy(from);
+    stone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),normal);
+    stone.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.random()*Math.PI*2));
+    stone.userData.fpsRoom=this.fpsRoom;this.scene.add(stone);this.firedStones.push(stone);
+    this.flyingStones.push({stone,from,to:landing,started:performance.now(),duration:clamp(from.distanceTo(landing)*18,220,650)});
+  }
 
   setSecretPlaying(playing: boolean){
     this.secretStarted=playing?performance.now():null;
@@ -853,8 +1119,13 @@ export class World {
   }
   setProgress(progress: number) {
     if(this.secretStarted!==null||this.secretReturn)return;
+    if(this.forestSecretMode!=='none')return;
     this.targetProgress=clamp(progress,RETREAT_LIMIT,5);
     if(this.capture){this.progress=this.targetProgress;this.progressVelocity=0;}
+    this.loadSceneAssets(progress);
+    if(this.paused)this.draw();
+  }
+  private loadSceneAssets(progress:number){
     if(progress>2.25&&!this.liveTextureLoading){
       this.liveTextureLoading=true;
       new THREE.TextureLoader().load(asset('images/film-'+liveConcert.youtubeId+'.webp'),texture=>{
@@ -864,7 +1135,6 @@ export class World {
     }
     if(progress>.18)this.loadCovers();
     if(progress>1.25 && !this.filmTextures.size)this.selectFilm(this.selectedFilm);
-    if(this.paused)this.draw();
   }
   setPaused(paused: boolean) { this.paused=paused; }
   setLivePlaying(playing:boolean){this.livePlaying=playing;}
@@ -885,6 +1155,11 @@ export class World {
     if(changed)this.cinemaSeatVisibility.needsUpdate=true;
   }
   private resize=()=>{
+    if(this.fpsLayoutMobile!==(innerWidth<800)){
+      this.fpsLayoutMobile=innerWidth<800;this.fpsLayout=firstPersonLayout(this.fpsLayoutMobile);this.makeFpsPassages();
+    }
+    FIGURE_POSITION.x=innerWidth<800?-6.5:-10;
+    this.forestFigure.group.position.copy(FIGURE_POSITION);
     this.camera.aspect=innerWidth/innerHeight;
     this.camera.fov=innerWidth<800?58:44;
     this.camera.updateProjectionMatrix();
@@ -895,9 +1170,26 @@ export class World {
   };
   private movePointer=(event: PointerEvent)=>{
     if(event.pointerType!=='mouse')return;
+    if(this.forestSecretMode==='fps'){
+      if(this.fpsDrag&&!(event.buttons&2)){this.endFpsDrag();return;}
+      if(this.fpsDrag&&event.pointerId===this.fpsDrag.id&&document.pointerLockElement!==this.options.canvas&&!this.paused&&!document.hidden){
+        this.turnFpsCamera(event.clientX-this.fpsDrag.x,event.clientY-this.fpsDrag.y);
+        this.fpsDrag.x=event.clientX;this.fpsDrag.y=event.clientY;
+      }
+      return;
+    }
     this.pointerTarget.set(event.clientX/innerWidth-.5,event.clientY/innerHeight-.5);
     const interactive=event.target instanceof Element && event.target.closest('a,button,dialog,header,footer');
     this.filmHoverRay=false;
+    if(this.forestSecretMode==='eyes'){
+      this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
+      document.body.style.cursor=this.raycaster.intersectObjects(this.forestFigure.eyes).length?'pointer':'';
+      return;
+    }
+    if(this.progress>.95&&this.progress<1.76&&!interactive){
+      this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
+      if(this.hitsForestFigure()){document.body.style.cursor='pointer';return;}
+    }
     if(this.progress>1.06 && this.progress<1.78 && !interactive){
       this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
       const offering=this.raycaster.intersectObjects(this.offerings)[0];
@@ -912,11 +1204,32 @@ export class World {
       document.body.style.cursor=this.filmHoverRay?'pointer':'';
     }
   };
-  private pointerDown=(event: PointerEvent)=>{this.lastPointerDown={x:event.clientX,y:event.clientY};};
+  private pointerDown=(event: PointerEvent)=>{
+    this.lastPointerDown={x:event.clientX,y:event.clientY};
+    if(this.forestSecretMode!=='fps'||event.target instanceof Element&&event.target.closest('button,a,dialog'))return;
+    if(event.button===2&&document.pointerLockElement!==this.options.canvas){
+      this.fpsDrag={id:event.pointerId,x:event.clientX,y:event.clientY};
+      document.body.setPointerCapture(event.pointerId);document.body.style.cursor='grabbing';return;
+    }
+    if(event.button!==0)return;
+    this.shootStone();
+    if(document.pointerLockElement!==this.options.canvas)this.requestFpsPointerLock();
+  };
   private pickOffering=(event: PointerEvent)=>{
     if(event.target instanceof Element && event.target.closest('a,button,dialog,header,footer'))return;
+    if(this.forestSecretMode==='fps')return;
     if(Math.hypot(event.clientX-this.lastPointerDown.x,event.clientY-this.lastPointerDown.y)>8)return;
     this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
+    if(this.forestSecretMode==='eyes'){
+      const eye=this.raycaster.intersectObjects(this.forestFigure.eyes)[0];
+      if(!eye)return;
+      const index=eye.object.userData.eye as number;
+      this.selectEyeDigit(index,this.eyeDigits[index]+1);
+      return;
+    }
+    if(this.progress>.95&&this.progress<1.76&&this.hitsForestFigure()){
+      this.beginForestEncounter();return;
+    }
     if(this.progress>1.06&&this.progress<1.78){
       const hit=this.raycaster.intersectObjects(this.offerings)[0];
       if(hit)this.options.onRelease(hit.object.userData.release as number);
@@ -924,13 +1237,19 @@ export class World {
       this.options.onFilm?.();
     }
   };
-  private visibility=()=>{this.lastTime=0;};
+  private visibility=()=>{this.lastTime=0;if(document.hidden)this.clearFpsKeys();};
   private contextLost=(event: Event)=>{event.preventDefault();this.destroy();this.options.onFailure();};
 
   private draw() {
-    const p=this.progress,mobile=innerWidth<800,route=cameraRoute(p,mobile);
+    const p=this.forestSecretMode==='fps'?this.fpsProgress():this.progress,mobile=innerWidth<800,route=cameraRoute(p,mobile);
     this.options.onRetreat?.(p);
     const layout=interiorLayout(mobile),door=forestDoor(mobile);
+    if(this.forestSecretMode!=='eyes'){
+      this.forestFigure.actor.position.x=Math.sin(this.timer*.34)*.018;
+      this.forestFigure.face.rotation.z=-.16+Math.sin(this.timer*.27)*.012;
+    }
+    this.forestFigure.ink.uniforms.uTime.value=this.timer;
+    this.forestFigure.ink.uniforms.uNear.value=this.forestSecretMode==='eyes'?1:0;
     this.interior.position.fromArray(layout.origin);this.interior.rotation.y=layout.rotation;
     this.ritual.position.set(layout.galleryCenterX,0,0);this.ritual.scale.setScalar(layout.scale);
     const cinemaScale=mobile?.7:1;
@@ -939,7 +1258,7 @@ export class World {
     for(const screen of this.screens)screen.position.y=CAMERA_HEIGHT/cinemaScale;
     this.signal.position.set(layout.signalX,0,layout.signalZ);
     this.band.position.set(layout.bandX,0,layout.bandZ);
-    this.bandExitDoor.rotation.y=bandDoorOpening(p)*Math.PI/2;
+    this.bandExitDoor.rotation.y=this.forestSecretMode==='fps'?Math.PI/2:bandDoorOpening(p)*Math.PI/2;
     this.live.position.set(layout.cinemaX,0,layout.liveZ);
     this.secretFigure.position.fromArray(liveFigurePosition(mobile));
     this.exitGate.position.set(layout.cinemaX,0,layout.exitZ);
@@ -970,7 +1289,27 @@ export class World {
       this.camera.position.copy(returning.position).lerp(new THREE.Vector3().fromArray(start.position),blend);
       this.camera.quaternion.copy(returning.rotation).slerp(returning.targetRotation,blend);
     }
-    const presence=scenePresence(p),forestFade=presence.forest;
+    if(this.forestSecretMode==='eyes'){
+      this.forestFigure.group.updateMatrixWorld(true);
+      const face=this.forestFigure.face.getWorldPosition(new THREE.Vector3());
+      const outward=new THREE.Vector3(0,0,1).transformDirection(this.forestFigure.face.matrixWorld);
+      const destination=face.clone().addScaledVector(outward,mobile?2.7:2.85).add(new THREE.Vector3(.6,-.05,0));
+      const focus=this.camera.clone();focus.position.copy(destination);
+      focus.lookAt(face);
+      const t=this.eyeApproach?smooth((performance.now()-this.eyeApproach.start)/1400,0,1):1;
+      this.camera.position.copy(this.eyeApproach?.from??destination).lerp(destination,t);
+      this.camera.quaternion.copy(this.eyeApproach?.rotation??focus.quaternion).slerp(focus.quaternion,t);
+      this.secretHud.classList.toggle('is-arrived',t>=1);
+    }else if(this.forestSecretMode==='fps'){
+      this.camera.position.copy(this.fpsPosition);
+      this.camera.quaternion.setFromEuler(new THREE.Euler(this.fpsPitch,this.fpsYaw,0,'YXZ'));
+    }
+    this.camera.updateMatrixWorld();
+    const presence=this.forestSecretMode==='fps'?{
+      forest:this.fpsRoom==='gallery'?1:0,gallery:this.fpsRoom==='gallery'?1:0,
+      cinema:this.fpsRoom==='cinema'?1:0,live:this.fpsRoom==='live'?1:0,
+      band:this.fpsRoom==='band'?1:0,signal:this.fpsRoom==='signal'?1:0,cinemaDoor:this.fpsRoom==='gallery'?1:0,
+    }:scenePresence(p),forestFade=presence.forest;
     const breath=.68+Math.sin(this.timer*.22)*.17+Math.sin(this.timer*.73+.8)*.095
       +Math.pow(Math.max(0,Math.sin(this.timer*3.1)),8)*.15;
     const fog=this.scene.fog as THREE.FogExp2;
@@ -979,6 +1318,10 @@ export class World {
     fog.density=THREE.MathUtils.lerp(.061,.019,smooth(p,1.76,2.04))*(1+Math.sin(this.timer*.12)*.035);
     fog.density+=.012*presence.live;
     fog.density*=atmospherePresence(p);
+    if(this.forestSecretMode==='eyes'){
+      const arrival=this.eyeApproach?smooth((performance.now()-this.eyeApproach.start)/1400,0,1):1;
+      fog.density=THREE.MathUtils.lerp(fog.density,.19,arrival);
+    }
     this.whiteLight.intensity=620*forestFade*(.64+breath*.48);
     this.whiteLight.target.position.set(Math.sin(this.timer*.085)*12,3,-27+Math.sin(this.timer*.12)*4);
     this.redLight.intensity=150*forestFade*breath;
@@ -1000,6 +1343,14 @@ export class World {
       if(texture){texture.repeat.set(1+.012*this.filmHover,1+.012*this.filmHover);texture.offset.set(this.filmHover*(-.006+Math.sin(filmFrame*3.7)*.002),this.filmHover*(-.006+Math.sin(filmFrame*5.3)*.002));}
     }
     this.setPresence(this.forest,presence.forest);
+    this.forestFigure.eyes.forEach((eye,index)=>{
+      const arrival=this.eyeApproach?smooth((performance.now()-this.eyeApproach.start-850)/550,0,1):0;
+      eye.material.opacity=this.forestSecretMode==='eyes'?presence.forest*arrival:0;
+      const pulse=Math.exp(-Math.max(0,performance.now()-this.eyePulses[index])/220);
+      const hover=this.hoveredEye===index;
+      eye.material.color.setScalar(hover?1.45:1+pulse*.35);
+      eye.scale.setScalar(1+(hover ? .04 : 0)+pulse*.04);
+    });
     // The planted forest floor continues through the whole recording gallery.
     this.setPresence(this.terrain,presence.forest);
     this.setPresence(this.ritual,presence.gallery);
@@ -1008,7 +1359,7 @@ export class World {
     this.setPresence(this.band,presence.band);
     this.setPresence(this.liveDrums,presence.live*smooth(this.drumVisibility,0,1));
     let cinemaScreen:ScreenBounds|null=null;
-    if(p>1.8&&p<2.65){
+    if(this.forestSecretMode!=='fps'&&p>1.8&&p<2.65){
       this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld();
       const screen=this.screens[0];
       const topLeft=screen.localToWorld(new THREE.Vector3(-5.865,3.3,0)).project(this.camera);
@@ -1018,13 +1369,13 @@ export class World {
     }
     // Include the slim controls below the video: they occupy the same foreground DOM layer.
     this.updateCinemaSeats(cinemaScreen?{...cinemaScreen,height:cinemaScreen.height+44}:null);
-    if(p>2.6&&p<3.6){
+    if(this.forestSecretMode!=='fps'&&p>2.6&&p<3.6){
       this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld();
       const topLeft=this.liveScreen.localToWorld(new THREE.Vector3(-5.8,3.2625,0)).project(this.camera);
       const bottomRight=this.liveScreen.localToWorld(new THREE.Vector3(5.8,-3.2625,0)).project(this.camera);
       this.options.onLiveScreen?.({x:(topLeft.x+1)*innerWidth/2,y:(1-topLeft.y)*innerHeight/2,width:(bottomRight.x-topLeft.x)*innerWidth/2,height:(topLeft.y-bottomRight.y)*innerHeight/2});
     }
-    if(p>2.75&&p<3.4){
+    if(this.forestSecretMode!=='fps'&&p>2.75&&p<3.4){
       const top=this.secretFigure.localToWorld(new THREE.Vector3(-.55,2.95,0)).project(this.camera);
       const bottom=this.secretFigure.localToWorld(new THREE.Vector3(.55,0,0)).project(this.camera);
       const bounds={x:(top.x+1)*innerWidth/2,y:(1-top.y)*innerHeight/2,width:(bottom.x-top.x)*innerWidth/2,height:(top.y-bottom.y)*innerHeight/2};
@@ -1032,6 +1383,16 @@ export class World {
     }else this.options.onSecretFigure?.(null);
     this.setPresence(this.signal,presence.signal);
     this.setPresence(this.exitGate,presence.cinemaDoor);
+    this.fpsPassages.visible=this.forestSecretMode==='fps';
+    for(const passage of this.fpsPassages.children)passage.visible=passage.userData.fpsRoom===this.fpsRoom;
+    for(const stone of this.firedStones){
+      const room=stone.userData.fpsRoom as FpsRoom;
+      stone.visible=this.forestSecretMode==='fps'?room===this.fpsRoom:presence[room]>.01;
+    }
+    if(this.forestSecretMode==='fps'){
+      this.secretHud.dataset.playerX=this.fpsPosition.x.toFixed(2);this.secretHud.dataset.playerZ=this.fpsPosition.z.toFixed(2);
+      this.secretHud.dataset.lookYaw=String(this.fpsYaw);this.secretHud.dataset.lookPitch=String(this.fpsPitch);
+    }
     this.forestVeil.opacity=.84*(1-smooth(p,.68,.84))*presence.forest;
     this.signal.rotation.z=Math.sin(this.timer*.035)*.025;
     (this.beam.material as THREE.MeshBasicMaterial).opacity=(.012+breath*.006)*presence.cinema;
@@ -1044,7 +1405,30 @@ export class World {
     light.lerp(galleryLight,smooth(p,.65,.88)).lerp(cinemaLight,smooth(p,1.68,1.96)).lerp(liveLight,smooth(p,2.55,2.95)).lerp(bandLight,smooth(p,3.5,3.85)).lerp(signalLight,smooth(p,4.5,4.85));
     this.portalGlows[0].presence=presence.forest;
     this.portalGlows[1].presence=presence.cinemaDoor;
-    this.lens.render(this.scene,this.camera,this.timer,p,light,breath,this.portalGlows);
+    const viewport=this.options.canvas.getBoundingClientRect();
+    this.figureTrigger.hidden=this.forestSecretMode!=='none'||p<=.95||p>=1.76;
+    if(!this.figureTrigger.hidden){
+      this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld();
+      const corners=[[-.5,-.85],[.5,-.85],[-.5,.85],[.5,.85]].map(([x,y])=>this.forestFigure.face.localToWorld(new THREE.Vector3(x,y,.25)).project(this.camera));
+      const x=Math.min(...corners.map(point=>point.x)),y=Math.max(...corners.map(point=>point.y));
+      this.figureTrigger.style.left=Math.round(viewport.left+(x+1)*viewport.width/2)+'px';
+      this.figureTrigger.style.top=Math.round(viewport.top+(1-y)*viewport.height/2)+'px';
+      this.figureTrigger.style.width=Math.round((Math.max(...corners.map(point=>point.x))-x)*viewport.width/2)+'px';
+      this.figureTrigger.style.height=Math.round((y-Math.min(...corners.map(point=>point.y)))*viewport.height/2)+'px';
+    }
+    if(this.forestSecretMode==='eyes'){
+      this.scene.updateMatrixWorld(true);this.camera.updateMatrixWorld();
+      this.forestFigure.eyes.forEach((eye,index)=>{
+        const center=this.forestFigure.face.localToWorld(eye.position.clone().add(new THREE.Vector3(0,0,eye.userData.surfaceZ))).project(this.camera);
+        const edge=this.forestFigure.face.localToWorld(eye.position.clone().add(new THREE.Vector3(EYE_RADIUS,0,eye.userData.edgeZ))).project(this.camera);
+        const size=Math.max(44,Math.hypot((edge.x-center.x)*viewport.width,(edge.y-center.y)*viewport.height));
+        const button=this.eyeButtons[index];
+        button.style.left=viewport.left+(center.x+1)*viewport.width/2+'px';button.style.top=viewport.top+(1-center.y)*viewport.height/2+'px';
+        button.style.width=size+'px';button.style.height=size+'px';
+      });
+    }
+    const faceFocus=this.forestSecretMode==='eyes'&&this.eyeApproach?smooth((performance.now()-this.eyeApproach.start)/1400,0,1):0;
+    this.lens.render(this.scene,this.camera,this.timer,p,light,breath,this.portalGlows,faceFocus);
   }
   private render=(now: number)=>{
     if(this.stopped)return;
@@ -1059,6 +1443,35 @@ export class World {
       this.secretReturn=undefined;done();
     }
     const elapsed=this.lastTime?(now-this.lastTime)/1000:1/60,delta=Math.min(elapsed,.1);this.lastTime=now;
+    if(this.fpsTransition){
+      const elapsed=now-this.fpsTransition.started;
+      if(elapsed>=180&&!this.fpsTransition.arrived){
+        this.fpsPosition.copy(this.fpsTransition.landing);this.enterFpsRoom(this.fpsTransition.door.destination);this.fpsTransition.arrived=true;
+      }
+      if(elapsed>=450){this.fpsTransition=null;this.secretHud.classList.remove('is-crossing');}
+    }
+    if(this.forestSecretMode==='fps'&&!this.paused&&!this.fpsTransition){
+      const forward=Number(this.fpsKeys.has('KeyW'))-Number(this.fpsKeys.has('KeyS'));
+      const sideways=Number(this.fpsKeys.has('KeyD'))-Number(this.fpsKeys.has('KeyA'));
+      if(forward||sideways){
+        const sprint=this.fpsKeys.has('ShiftLeft')||this.fpsKeys.has('ShiftRight');
+        const length=Math.hypot(forward,sideways),speed=(sprint?11:6)*delta/length;
+        const proposed=this.fpsPosition.clone();
+        proposed.x+=(-Math.sin(this.fpsYaw)*forward+Math.cos(this.fpsYaw)*sideways)*speed;
+        proposed.z+=(-Math.cos(this.fpsYaw)*forward-Math.sin(this.fpsYaw)*sideways)*speed;
+        const doors=this.fpsLayout.doors.filter(door=>door.room===this.fpsRoom);
+        const crossing=crossedFpsDoor(this.fpsPosition,proposed,doors);
+        if(crossing){
+          this.fpsTransition={started:now,door:crossing.door,landing:crossing.landing,arrived:false};
+          this.secretHud.classList.add('is-crossing');
+        }else this.fpsPosition.copy(moveFpsPlayer(this.fpsPosition,proposed,this.fpsLayout.rooms[this.fpsRoom]));
+      }
+    }
+    this.flyingStones=this.flyingStones.filter(flight=>{
+      const t=clamp((now-flight.started)/flight.duration,0,1);
+      flight.stone.position.copy(flight.from).lerp(flight.to,t);
+      return t<1;
+    });
     const settled=Math.abs(this.progress-this.targetProgress)<.0001&&Math.abs(this.progressVelocity)<.0001;
     const drumTarget=this.livePlaying?0:1,drumsSettled=this.drumVisibility===drumTarget;
     if(this.paused && settled && drumsSettled&&this.cinemaSeatsSettled)return;
@@ -1088,8 +1501,16 @@ export class World {
   };
   destroy() {
     if(this.stopped)return;this.stopped=true;cancelAnimationFrame(this.frame);
+    this.setForestSecretMode('none');this.secretHud.remove();this.figureTrigger.remove();
+    this.forestFigure.textures.forEach(texture=>texture.dispose());
     removeEventListener('resize',this.resize);removeEventListener('pointermove',this.movePointer);
     removeEventListener('pointerdown',this.pointerDown);removeEventListener('pointerup',this.pickOffering);
+    removeEventListener('pointerup',this.endFpsDrag);removeEventListener('pointercancel',this.endFpsDrag);
+    removeEventListener('contextmenu',this.fpsContextMenu);
+    document.body.removeEventListener('lostpointercapture',this.endFpsDrag);
+    removeEventListener('keydown',this.fpsKeyDown);removeEventListener('keyup',this.fpsKeyUp);
+    document.removeEventListener('mousemove',this.fpsMouseMove);
+    removeEventListener('blur',this.clearFpsKeys);document.removeEventListener('pointerlockchange',this.fpsPointerLockChange);
     document.removeEventListener('visibilitychange',this.visibility);
     this.options.canvas.removeEventListener('webglcontextlost',this.contextLost);
     const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>(),textures=new Set<THREE.Texture>();

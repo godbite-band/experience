@@ -36,6 +36,7 @@ let currentChapter = 0;
 let stillMode = false;
 let world: World | undefined;
 let worldGeneration = 0;
+let forestSecretMode:'none'|'eyes'|'fps'='none';
 const ambient = new Ambient(()=>updateControls());
 const releaseDialog = $<HTMLDialogElement>('#release-dialog');
 const releasePlayer = $('#release-player');
@@ -414,6 +415,7 @@ function moveJourney(pixels:number,target:EventTarget|null,smooth=false){
 }
 addEventListener('wheel',event=>{
   if(event.ctrlKey)return;
+  if(forestSecretMode!=='none'){event.preventDefault();return;}
   if(secretPlaying){event.preventDefault();return;}
   if(dialogs.some(dialog=>dialog.open)||Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
   const scroller=nestedScroller(event.target);
@@ -436,6 +438,7 @@ addEventListener('touchstart',event=>{
   retreatTouch={id:touch.identifier,x:touch.clientX,y:touch.clientY,target:event.target};
 },{passive:true});
 addEventListener('touchmove',event=>{
+  if(forestSecretMode!=='none'){if(event.cancelable)event.preventDefault();return;}
   if(event.touches.length!==1){retreatTouch=null;return;}
   if(secretPlaying){if(event.cancelable)event.preventDefault();return;}
   if(!retreatTouch)return;
@@ -561,7 +564,7 @@ async function startWorld() {
   try {
     const {World}=await import('./world');
     if(generation!==worldGeneration || reducedMotion.matches)return;
-    world=new World({canvas:$<HTMLCanvasElement>('#world-canvas'),onFailure:useStills,onRelease:openRelease,onFilm:()=>openFilm(selectedFilm.id),onLiveScreen:bounds=>{
+    world=new World({canvas:$<HTMLCanvasElement>('#world-canvas'),onFailure:useStills,onRelease:openRelease,onFilm:()=>openFilm(selectedFilm.id),onForestSecret:mode=>{forestSecretMode=mode;if(mode==='none')ambient.setProgress(progress());},onFpsProgress:p=>ambient.setProgress(p),onLiveScreen:bounds=>{
       const stage=stages[3];
       stage.style.setProperty('--live-left',bounds.x+'px');stage.style.setProperty('--live-top',bounds.y+'px');
       stage.style.setProperty('--live-width',bounds.width+'px');stage.style.setProperty('--live-height',bounds.height+'px');

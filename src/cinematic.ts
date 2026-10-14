@@ -3,6 +3,19 @@ import { atmospherePresence } from './journey';
 
 export interface PortalGlow { object: THREE.Object3D; presence: number }
 
+/** A light on/behind the camera plane has no usable screen projection. */
+export function projectLensLight(light:THREE.Vector3,camera:THREE.PerspectiveCamera){
+  const view=light.clone().applyMatrix4(camera.matrixWorldInverse);
+  if(!Number.isFinite(view.lengthSq())||view.z>=-camera.near)return {position:new THREE.Vector2(.5,.5),visibility:0};
+  const projected=view.applyMatrix4(camera.projectionMatrix);
+  const edge=Math.max(Math.abs(projected.x),Math.abs(projected.y));
+  if(!Number.isFinite(edge))return {position:new THREE.Vector2(.5,.5),visibility:0};
+  return {
+    position:new THREE.Vector2(THREE.MathUtils.clamp(projected.x*.5+.5,-1,2),THREE.MathUtils.clamp(projected.y*.5+.5,-1,2)),
+    visibility:1-THREE.MathUtils.smoothstep(edge,1.2,3),
+  };
+}
+
 const vertex = /* glsl */ `
   varying vec2 vUv;
   void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}
@@ -116,7 +129,7 @@ const film = /* glsl */ `
   uniform sampler2D uScene, uGlow, uMist;
   uniform vec2 uPixel, uLight;
   uniform vec3 uLightColor;
-  uniform float uTime, uJourney, uAspect, uBreath, uAtmosphere;
+  uniform float uTime, uJourney, uAspect, uBreath, uAtmosphere, uLightVisibility;
   varying vec2 vUv;
   // Avoid amplified sine rounding differences at noise-cell borders on native GPUs.
   float hash(vec2 p){
@@ -154,10 +167,10 @@ const film = /* glsl */ `
     vec2 lightDelta=(uv-uLight)*vec2(uAspect,1.);
     float distanceToLight=length(lightDelta);
     float aureole=exp(-distanceToLight*distanceToLight*14.);
-    float rayAngle=atan(lightDelta.y,lightDelta.x);
+    float rayAngle=atan(lightDelta.y,lightDelta.x+0.000001);
     float shafts=pow(max(0.,sin(rayAngle*19.+vapor*2.5+uTime*.028)),12.);
     float cinemaLight=1.-.3*smoothstep(1.6,1.78,uJourney)*(1.-smoothstep(2.4,2.65,uJourney));
-    c+=uLightColor*(aureole*(.035+.075*vapor)+shafts*.018*exp(-distanceToLight*3.)+exp(-abs(lightDelta.y)*120.)*exp(-abs(lightDelta.x)*2.5)*.018)*uBreath*cinemaLight*uAtmosphere;
+    c+=uLightColor*(aureole*(.035+.075*vapor)+shafts*.018*exp(-distanceToLight*3.)+exp(-abs(lightDelta.y)*120.)*exp(-abs(lightDelta.x)*2.5)*.018)*uBreath*cinemaLight*uAtmosphere*uLightVisibility;
     float curtain=cloud(vUv*vec2(2.9,3.7)-flow*.6+4.3);
     c*=1.-smoothstep(.34,.83,curtain)*mix(.38,.09,gallery)*mix(1.,.8,cinema)*uAtmosphere;
     c+=vec3(.013,.016,.021)*pow(vapor,2.)*(.7+uBreath*.3)*uAtmosphere;
@@ -194,7 +207,7 @@ export class CinematicLens {
     uniforms:{
       uScene:{value:null},uGlow:{value:null},uMist:{value:null},uPixel:{value:new THREE.Vector2()},
       uLight:{value:new THREE.Vector2(.5,.4)},uLightColor:{value:new THREE.Color('#bc092b')},
-      uTime:{value:0},uJourney:{value:0},uAspect:{value:1},uBreath:{value:1},uAtmosphere:{value:1},
+      uTime:{value:0},uJourney:{value:0},uAspect:{value:1},uBreath:{value:1},uAtmosphere:{value:1},uLightVisibility:{value:1},
     },
   });
   private vapor=new THREE.ShaderMaterial({
@@ -239,7 +252,7 @@ export class CinematicLens {
     this.grade.uniforms.uPixel.value.set(1/w,1/h);
     this.grade.uniforms.uAspect.value=w/h;
   }
-  render(scene: THREE.Scene,camera: THREE.PerspectiveCamera,time: number,journey: number,light: THREE.Vector3,breath: number,portals: readonly PortalGlow[]){
+  render(scene: THREE.Scene,camera: THREE.PerspectiveCamera,time: number,journey: number,light: THREE.Vector3,breath: number,portals: readonly PortalGlow[],focus=0){
     this.renderer.setRenderTarget(this.source);this.renderer.render(scene,camera);
     this.vapor.uniforms.uInverseProjection.value.copy(camera.projectionMatrixInverse);
     this.vapor.uniforms.uCameraWorld.value.copy(camera.matrixWorld);
@@ -249,7 +262,7 @@ export class CinematicLens {
     const indoor=THREE.MathUtils.smoothstep(journey,.82,1.14);
     const theater=THREE.MathUtils.smoothstep(journey,1.7,2.);
     const club=THREE.MathUtils.smoothstep(journey,2.55,2.95);
-    const atmosphere=atmospherePresence(journey);
+    const atmosphere=atmospherePresence(journey)*(1-focus);
     this.vapor.uniforms.uDensity.value=(THREE.MathUtils.lerp(.014,.005,indoor)-.003*theater+.002*club)*atmosphere;
     this.vapor.uniforms.uBillowDensity.value=(THREE.MathUtils.lerp(.055,.009,indoor)-.003*theater+.018*club)*atmosphere;
     for(let i=0;i<2;i++){
@@ -270,8 +283,9 @@ export class CinematicLens {
     this.grade.uniforms.uTime.value=time;this.grade.uniforms.uJourney.value=journey;
     this.grade.uniforms.uBreath.value=breath;
     this.grade.uniforms.uAtmosphere.value=atmosphere;
-    const projected=light.clone().project(camera);
-    this.grade.uniforms.uLight.value.set(projected.x*.5+.5,projected.y*.5+.5);
+    const projected=projectLensLight(light,camera);
+    this.grade.uniforms.uLight.value.copy(projected.position);
+    this.grade.uniforms.uLightVisibility.value=projected.visibility;
     const cinema=THREE.MathUtils.smoothstep(journey,1.72,1.98)*(1-THREE.MathUtils.smoothstep(journey,2.4,2.65));
     const band=THREE.MathUtils.smoothstep(journey,3.56,3.86)*(1-THREE.MathUtils.smoothstep(journey,4.48,4.74));
     this.grade.uniforms.uLightColor.value.set('#e31332').lerp(new THREE.Color('#85939f'),Math.max(cinema,band));
