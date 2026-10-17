@@ -362,104 +362,52 @@ function nestedScroller(target:EventTarget|null){
   }
   return null;
 }
-function canScroll(element:HTMLElement,pixels:number){
-  return pixels<0?element.scrollTop>1:element.scrollTop+element.clientHeight<element.scrollHeight-1;
-}
-let wheelFrame=0;
-let wheelMotion:{scroller:HTMLElement|null;position:number;target:number;written:number;time:number;direction:number}|null=null;
-function stopWheelScroll(){
-  cancelAnimationFrame(wheelFrame);wheelFrame=0;wheelMotion=null;
-}
-function smoothWheelScroll(pixels:number,scroller:HTMLElement|null=null){
-  if(!pixels)return;
-  const current=scroller?scroller.scrollTop:scrollY;
-  const maximum=scroller?scroller.scrollHeight-scroller.clientHeight:document.documentElement.scrollHeight-document.documentElement.clientHeight;
-  if(reducedMotion.matches){
-    stopWheelScroll();
-    if(scroller)scroller.scrollBy({top:pixels,behavior:'instant'});
-    else window.scrollBy({top:pixels,behavior:'instant'});
-    return;
-  }
-  const direction=Math.sign(pixels);
-  if(!wheelMotion||wheelMotion.scroller!==scroller||wheelMotion.direction!==direction||Math.abs(current-wheelMotion.written)>2){
-    stopWheelScroll();
-    wheelMotion={scroller,position:current,target:current,written:current,time:performance.now(),direction};
-  }
-  // Accumulate every high-resolution wheel delta instead of restarting an animation per event.
-  wheelMotion.target=Math.max(0,Math.min(maximum,wheelMotion.target+pixels));
-  if(wheelFrame)return;
-  wheelMotion.time=performance.now();
-  const frame=(time:number)=>{
-    const motion=wheelMotion;
-    if(!motion)return;
-    const actual=motion.scroller?motion.scroller.scrollTop:scrollY;
-    if(Math.abs(actual-motion.written)>2){stopWheelScroll();return;}
-    const elapsed=Math.max(0,time-motion.time);motion.time=time;
-    motion.position+=(motion.target-motion.position)*(1-Math.exp(-elapsed/65));
-    const settled=Math.abs(motion.target-motion.position)<.5;
-    if(settled)motion.position=motion.target;
-    if(motion.scroller)motion.scroller.scrollTo({top:motion.position,behavior:'instant'});
-    else window.scrollTo({top:motion.position,behavior:'instant'});
-    motion.written=motion.scroller?motion.scroller.scrollTop:scrollY;
-    // Keep fractional input after settling; tiny trackpad deltas must not disappear.
-    if(settled)wheelFrame=0;
-    else wheelFrame=requestAnimationFrame(frame);
-  };
-  wheelFrame=requestAnimationFrame(frame);
-}
-function moveJourney(pixels:number,target:EventTarget|null,smooth=false){
-  if(retreat<0||(canRetreat(target)&&scrollY<=0&&pixels<0)){
-    stopWheelScroll();moveRetreat(pixels/2400);return;
-  }
-  if(smooth)smoothWheelScroll(pixels);
-  else window.scrollBy({top:pixels,behavior:'instant'});
-}
+// Ordinary wheel input belongs to the browser, including high-resolution devices.
+// Only the optional forest retreat at the beginning needs custom input.
 addEventListener('wheel',event=>{
-  if(event.ctrlKey)return;
-  if(forestSecretMode!=='none'){event.preventDefault();return;}
-  if(secretPlaying){event.preventDefault();return;}
-  if(dialogs.some(dialog=>dialog.open)||Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
-  const scroller=nestedScroller(event.target);
+  if(event.ctrlKey||dialogs.some(dialog=>dialog.open))return;
+  if(forestSecretMode!=='none'||secretPlaying){if(event.cancelable)event.preventDefault();return;}
+  if(Math.abs(event.deltaX)>Math.abs(event.deltaY))return;
   const pixels=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?innerHeight:1);
-  event.preventDefault();
-  // Use the same wheel direction in copy and scenes, then leave copy at its edge.
-  if(retreat===0&&scroller&&canScroll(scroller,-pixels)){
-    smoothWheelScroll(-pixels,scroller);return;
+  const scroller=nestedScroller(event.target);
+  if(scroller&&(pixels<0?scroller.scrollTop>1:scroller.scrollTop+scroller.clientHeight<scroller.scrollHeight-1))return;
+  if(retreat<0||(pixels<0&&canRetreat(event.target))){
+    if(!event.cancelable)return;
+    event.preventDefault();moveRetreat(pixels/2400);
   }
-  moveJourney(-pixels,event.target,true);
 },{passive:false});
-for(const type of ['pointerdown','keydown','resize'])addEventListener(type,stopWheelScroll,{passive:true});
-let retreatTouch: {id:number;x:number;y:number;target:EventTarget|null} | null=null;
-addEventListener('touchstart',event=>{
-  stopWheelScroll();
+let retreatTouch: {id:number;x:number;y:number;claimed:boolean} | null=null;
+function endRetreatTouch(){
   retreatTouch=null;
-  if(event.touches.length!==1||dialogs.some(dialog=>dialog.open)
-    ||(event.target instanceof Element&&event.target.closest('input,textarea,select,iframe')))return;
-  const touch=event.touches[0];
-  retreatTouch={id:touch.identifier,x:touch.clientX,y:touch.clientY,target:event.target};
-},{passive:true});
-addEventListener('touchmove',event=>{
-  if(forestSecretMode!=='none'){if(event.cancelable)event.preventDefault();return;}
-  if(event.touches.length!==1){retreatTouch=null;return;}
-  if(secretPlaying){if(event.cancelable)event.preventDefault();return;}
+  removeEventListener('touchmove',handleRetreatTouch);
+}
+function handleRetreatTouch(event:TouchEvent){
+  if(event.touches.length!==1){endRetreatTouch();return;}
   if(!retreatTouch)return;
   const touch=event.touches[0];
   if(touch.identifier!==retreatTouch.id)return;
   const dx=touch.clientX-retreatTouch.x,dy=touch.clientY-retreatTouch.y;
-  // Own vertical gestures from their first movement, before Chrome pans its toolbar.
-  if(Math.abs(dx)>Math.abs(dy)&&retreat===0){retreatTouch=null;return;}
+  if(!retreatTouch.claimed){
+    if(Math.abs(dx)<4&&Math.abs(dy)<4)return;
+    // Release forward and horizontal swipes immediately to native scrolling.
+    if(Math.abs(dx)>Math.abs(dy)||(dy<0&&retreat===0)){endRetreatTouch();return;}
+    retreatTouch.claimed=true;
+  }
   retreatTouch.x=touch.clientX;retreatTouch.y=touch.clientY;
-  // Native copy scrolling owns the gesture only while it can move in that direction.
-  // A new swipe at its boundary must be allowed to return to the journey.
-  const scroller=nestedScroller(retreatTouch.target);
-  if(retreat===0&&scroller&&canScroll(scroller,-dy))return;
   if(!event.cancelable)return;
   event.preventDefault();
-  if(retreat<0||(canRetreat(retreatTouch.target)&&scrollY<=0&&dy>0)){
-    moveRetreat(-dy/Math.max(360,innerHeight*.7));
-  }else moveJourney(-dy,retreatTouch.target);
-},{passive:false});
-for(const type of ['touchend','touchcancel'])addEventListener(type,()=>{retreatTouch=null;},{passive:true});
+  if(!secretPlaying&&forestSecretMode==='none')moveRetreat(-dy/Math.max(360,innerHeight*.7));
+}
+addEventListener('touchstart',event=>{
+  endRetreatTouch();
+  if(event.touches.length!==1||dialogs.some(dialog=>dialog.open)||secretPlaying||forestSecretMode!=='none')return;
+  // There is no blocking touchmove listener during normal page or copy scrolling.
+  if(retreat===0&&(!canRetreat(event.target)||nestedScroller(event.target)))return;
+  const touch=event.touches[0];
+  retreatTouch={id:touch.identifier,x:touch.clientX,y:touch.clientY,claimed:false};
+  addEventListener('touchmove',handleRetreatTouch,{passive:false});
+},{passive:true});
+for(const type of ['touchend','touchcancel'])addEventListener(type,endRetreatTouch,{passive:true});
 function progress(){
   if(scrollY<=0&&retreat<0)return retreat;
   const y=Math.max(0,scrollY);
@@ -521,7 +469,7 @@ addEventListener('scroll',requestJourney,{passive:true});
 addEventListener('resize',requestJourney,{passive:true});
 
 function navigate(chapter: Chapter, instant=false) {
-  stopWheelScroll();
+  endRetreatTouch();
   resetRetreat();requestJourney();
   const section=$('#'+chapter);
   history.replaceState(null,'','#'+chapter);

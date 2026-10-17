@@ -1618,8 +1618,8 @@ export class World {
     this.drumVisibility+=clamp(drumTarget-this.drumVisibility,-fadeStep,fadeStep);
     // A playback fade may render while paused, without moving the settled camera.
     if(!this.paused || !settled){
-      // Critically damped scroll tracking preserves velocity when a wheel event changes the destination.
-      const frequency=8,offset=this.progress-this.targetProgress,decay=Math.exp(-frequency*delta);
+      // Native scrolling already supplies inertia; keep the camera close to the finger.
+      const frequency=14,offset=this.progress-this.targetProgress,decay=Math.exp(-frequency*delta);
       const travel=(this.progressVelocity+frequency*offset)*delta;
       this.progress=this.targetProgress+(offset+travel)*decay;
       this.progressVelocity=(this.progressVelocity-frequency*travel)*decay;

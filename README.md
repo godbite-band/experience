@@ -2,6 +2,8 @@
 
 A native-scroll journey through six Three.js scenes: the threshold, ritual, cinema, live club, dressing room and signal. Vite, TypeScript, semantic HTML, local fonts and original Godbite artwork. English and Polish, pulsing synthesized ambient, enabled by default, and still-image fallback.
 
+Scrolling uses the browser's normal direction, touch inertia and trackpad handling. There is no JavaScript wheel smoothing or manual forward touch scrolling. Overflowing scene text chains back to the page at its boundary; dialogs contain their own scrolling. Only an eligible retreat gesture at the forest opening temporarily installs a blocking touch handler, releasing forward swipes to the browser. The camera applies a single restrained damping layer to follow the native scroll position, preserving the atmosphere without delaying page input. Mobile Chromium tests check uncancelled native touch scrolling and returning from Contact over its copy.
+
 ## Run locally
 
 Requires Node.js 22.12+ and npm.

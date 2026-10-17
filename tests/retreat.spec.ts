@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('backwards wheel at the start plays the decoded Skyrim sample once and allows returning',async({page},testInfo)=>{
   // CDP wheel distances are device pixels inside an emulated mobile scroll container.
-  const wheel=(pixels:number)=>page.mouse.wheel(0,pixels*(testInfo.project.use.isMobile?(testInfo.project.use.deviceScaleFactor??1):1));
+  const wheel=(pixels:number)=>page.mouse.wheel(0,-pixels*(testInfo.project.use.isMobile?(testInfo.project.use.deviceScaleFactor??1):1));
   const errors:string[]=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(()=>{
@@ -149,11 +149,11 @@ test('muted retreat enlarges the invitation and clicking it starts the secret wi
   await expect(page.locator('body')).toHaveClass(/scene-ready/);
   const hint=page.locator('#sound-hint'),font=()=>hint.evaluate(element=>parseFloat(getComputedStyle(element).fontSize));
   await expect(hint).toBeHidden();
-  await page.mouse.move(20,300);await page.mouse.wheel(0,1000);
+  await page.mouse.move(20,300);await page.mouse.wheel(0,-1000);
   await expect(hint).toBeVisible();
   await expect.poll(font).toBeGreaterThan(9.05);
   const halfway=await font();
-  for(let i=0;i<8;i++)await page.mouse.wheel(0,1600);
+  for(let i=0;i<8;i++)await page.mouse.wheel(0,-1600);
   await expect.poll(font).toBeGreaterThan(halfway*2);
   await page.waitForTimeout(600);
   const bounds=await hint.boundingBox(),size=await font();
@@ -167,7 +167,7 @@ test('reduced motion keeps the normal start without loading the secret audio',as
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('./');
   await expect(page.locator('body')).toHaveClass(/still-mode/);
-  await page.mouse.wheel(0,2600);
+  await page.mouse.wheel(0,-2600);
   await page.waitForTimeout(300);
   expect(await page.evaluate(()=>performance.getEntriesByType('resource').some(entry=>entry.name.includes('never-should-have')))).toBe(false);
   expect(await page.evaluate(()=>scrollY)).toBe(0);

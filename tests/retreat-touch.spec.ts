@@ -9,6 +9,36 @@ async function swipe(session:CDPSession,from:number,to:number,x=20){
   await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
 }
 
+test('ordinary mobile swipes remain uncancelled for native scrolling',async({page,context,isMobile,browserName})=>{
+  test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
+  // Isolate browser input from software rendering.
+  await page.addInitScript(()=>{
+    const getContext=HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext=function(type:string,...args:any[]):any{
+      if(type.includes('webgl'))return null;
+      return (getContext as any).call(this,type,...args);
+    };
+  });
+  await page.goto('./');
+  await expect(page.locator('body')).toHaveClass(/still-mode/);
+  await page.evaluate(()=>window.scrollTo({top:800,behavior:'instant'}));
+  const session=await context.newCDPSession(page);
+  try{
+    await page.evaluate(()=>{
+      (window as any).touchMoves=[];
+      addEventListener('touchmove',event=>{
+        (window as any).touchMoves.push(event.defaultPrevented);
+      },{passive:true});
+    });
+    await swipe(session,650,300);
+    await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(1000);
+    const moves=await page.evaluate(()=>(window as any).touchMoves as boolean[]);
+    expect(moves.length).toBeGreaterThan(0);
+    expect(moves.every(cancelled=>!cancelled)).toBe(true);
+    await page.screenshot({path:'test-results/native-mobile-scroll.png'});
+  }finally{await session.detach();}
+});
+
 test('Android-style downward swipes retreat without refreshing and upward swipes restore forward navigation',async({page,context,isMobile,browserName})=>{
   test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
   await page.addInitScript(()=>sessionStorage.setItem('godbite-sound','off'));
@@ -82,12 +112,12 @@ test('touch swipes play the Easter Egg and return before forward navigation resu
   }finally{await session.detach();}
 });
 
-test('the first upward swipe advances and downward swipe returns without native root panning',async({page,context,isMobile,browserName})=>{
+test('the first upward swipe advances with native inertia and downward swipe returns',async({page,context,isMobile,browserName})=>{
   test.skip(!isMobile||browserName!=='chromium','Requires touch-enabled Chromium');
   await page.goto('./');
   await expect(page.locator('body')).toHaveClass(/scene-ready/);
-  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY)).toBe('hidden');
-  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).touchAction)).toBe('pan-x pinch-zoom');
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY)).not.toBe('hidden');
+  expect(await page.evaluate(()=>getComputedStyle(document.documentElement).touchAction)).toBe('manipulation');
   const session=await context.newCDPSession(page);
   try{
     await swipe(session,650,180);
