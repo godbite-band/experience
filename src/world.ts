@@ -8,7 +8,7 @@ import { firstPersonLayout, crossedFpsDoor, moveFpsPlayer, turnFpsView, FpsLookI
 import { PapalHunt } from './papal-hunt';
 import { createSigil } from './sigils';
 import type { HuntFact } from './hunt-data';
-import { cameraRoute, activeRecording, atmospherePresence, forestDoor, forestTreePosition, interiorLayout, interiorPoint, scenePresence, CAMERA_HEIGHT, RETREAT_LIMIT, liveFigurePosition, LIVE_SCREEN_Z, bandDoorOpening } from './journey';
+import { cameraRoute, activeRecording, atmospherePresence, forestDoor, forestTreePosition, interiorLayout, interiorPoint, scenePresence, CAMERA_HEIGHT, RETREAT_LIMIT, RECORD_STOPS, liveFigurePosition, LIVE_SCREEN_Z, bandDoorOpening } from './journey';
 
 const clamp = THREE.MathUtils.clamp;
 const smooth = THREE.MathUtils.smoothstep;
@@ -118,6 +118,7 @@ export interface WorldOptions {
   canvas: HTMLCanvasElement;
   onFailure: () => void;
   onRelease: (index: number) => void;
+  onAdvance?: (destination?:number) => void;
   onRecording?: (index: number) => void;
   onRetreat?: (progress: number) => void;
   onFilm?: () => void;
@@ -239,7 +240,8 @@ export class World {
   private whiteLight = new THREE.SpotLight('#adb8c5', 620, 95, .32, 1, 1.7);
   private redLight = new THREE.PointLight('#bf082c', 150, 42, 1.6);
   private beam: THREE.Mesh;
-  private lastPointerDown = { x: 0, y: 0 };
+  private lastPointerDown: {id:number;x:number;y:number;scroll:number}|null = null;
+  private doorTargets: {mesh:THREE.Mesh;start:number;end:number;destination:number}[] = [];
   private hoveredRelease = -1;
   private options: WorldOptions;
   private capture = import.meta.env.DEV && new URLSearchParams(location.search).has('capture');
@@ -279,6 +281,9 @@ export class World {
     this.makeRitual();
     const layout=interiorLayout(innerWidth<800);
     this.makeDoor(this.exitGate,layout.cinemaX,layout.exitZ);
+    this.addDoorTarget(this.aperture,0,3.5,0,2.6,7,-1,.9,1.16);
+    this.addDoorTarget(this.exitGate,0,3.5,0,2.6,7,1.5,1.9,2);
+    this.addDoorTarget(this.band,8,2.8,-.45,3,5.6,4,4.65,5);
     this.beam = this.makeCinema();
     this.makeLive();
     this.makeSignal();
@@ -476,6 +481,15 @@ export class World {
     top.position.set(0,7,0);group.add(top);
   }
 
+  private addDoorTarget(group:THREE.Group,x:number,y:number,z:number,width:number,height:number,start:number,end:number,destination:number){
+    // Raycast the opening as well as the frame, without rendering another surface.
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+    mesh.visible=false;mesh.position.set(x,y,z);group.add(mesh);
+    this.doorTargets.push({mesh,start,end,destination});
+  }
+  private pickedDoor(){
+    return this.doorTargets.find(({mesh,start,end})=>this.progress>=start&&this.progress<end&&this.raycaster.intersectObject(mesh).length>0);
+  }
   private makeRitual() {
     const water=new THREE.Mesh(new THREE.PlaneGeometry(110,160),new THREE.ShaderMaterial({
       vertexShader:surfaceVertex,fragmentShader:waterFragment,
@@ -1316,6 +1330,10 @@ export class World {
     this.pointerTarget.set(event.clientX/innerWidth-.5,event.clientY/innerHeight-.5);
     const interactive=event.target instanceof Element && event.target.closest('a,button,dialog,header,footer');
     this.filmHoverRay=false;
+    if(this.forestSecretMode==='none'&&!interactive){
+      this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
+      if(this.pickedDoor()){document.body.style.cursor='pointer';return;}
+    }
     if(this.forestSecretMode==='eyes'){
       this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
       document.body.style.cursor=this.raycaster.intersectObjects(this.forestFigure.eyes).length?'pointer':'';
@@ -1325,11 +1343,15 @@ export class World {
       this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
       if(this.hitsForestFigure()){document.body.style.cursor='pointer';return;}
     }
-    if(this.progress>1.06 && this.progress<1.78 && !interactive){
+    if(this.progress>=.9 && this.progress<1.82 && !interactive){
       this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
       const offering=this.raycaster.intersectObjects(this.offerings)[0];
+      const previousRelease=this.hoveredRelease;
       this.hoveredRelease=offering?offering.object.userData.release as number:-1;
       document.body.style.cursor=offering?'pointer':'';
+      if(this.hoveredRelease>=0&&this.hoveredRelease!==previousRelease&&event.buttons===0){
+        this.options.onAdvance?.(RECORD_STOPS[this.hoveredRelease]);
+      }
     }else{
       this.hoveredRelease=-1;
       if(this.progress>1.85&&this.progress<2.4&&!interactive){
@@ -1340,7 +1362,8 @@ export class World {
     }
   };
   private pointerDown=(event: PointerEvent)=>{
-    this.lastPointerDown={x:event.clientX,y:event.clientY};
+    this.lastPointerDown=event.button===0&&!(event.target instanceof Element&&event.target.closest('a,button,dialog,header,footer,input,textarea,select,iframe'))
+      ?{id:event.pointerId,x:event.clientX,y:event.clientY,scroll:scrollY}:null;
     if(this.forestSecretMode!=='fps'||event.target instanceof Element&&event.target.closest('button,a,dialog'))return;
     if(this.huntPaused||event.target instanceof Element&&event.target.closest('.hunt-fact,.hunt-menu'))return;
     if(event.button===2&&document.pointerLockElement!==this.options.canvas){
@@ -1352,9 +1375,11 @@ export class World {
     if(document.pointerLockElement!==this.options.canvas)this.requestFpsPointerLock();
   };
   private pickOffering=(event: PointerEvent)=>{
-    if(event.target instanceof Element && event.target.closest('a,button,dialog,header,footer'))return;
+    const start=this.lastPointerDown;this.lastPointerDown=null;
+    if(event.button!==0||!start||event.pointerId!==start.id)return;
+    if(event.target instanceof Element && event.target.closest('a,button,dialog,header,footer,input,textarea,select,iframe'))return;
     if(this.forestSecretMode==='fps')return;
-    if(Math.hypot(event.clientX-this.lastPointerDown.x,event.clientY-this.lastPointerDown.y)>8)return;
+    if(Math.hypot(event.clientX-start.x,event.clientY-start.y)>8||Math.abs(scrollY-start.scroll)>2)return;
     this.raycaster.setFromCamera(new THREE.Vector2(event.clientX/innerWidth*2-1,-event.clientY/innerHeight*2+1),this.camera);
     if(this.forestSecretMode==='eyes'){
       const eye=this.raycaster.intersectObjects(this.forestFigure.eyes)[0];
@@ -1366,12 +1391,15 @@ export class World {
     if(this.progress>.95&&this.progress<1.76&&this.hitsForestFigure()){
       this.beginForestEncounter();return;
     }
-    if(this.progress>1.06&&this.progress<1.78){
+    const door=this.pickedDoor();
+    if(door){this.options.onAdvance?.(door.destination);return;}
+    if(this.progress>=.9&&this.progress<1.82){
       const hit=this.raycaster.intersectObjects(this.offerings)[0];
-      if(hit)this.options.onRelease(hit.object.userData.release as number);
+      if(hit){this.options.onRelease(hit.object.userData.release as number);return;}
     }else if(this.progress>1.85&&this.progress<2.4&&this.raycaster.intersectObjects(this.screens).length){
-      this.options.onFilm?.();
+      this.options.onFilm?.();return;
     }
+    this.options.onAdvance?.();
   };
   private visibility=()=>{this.lastTime=0;if(document.hidden)this.clearFpsKeys();};
   private contextLost=(event: Event)=>{event.preventDefault();this.destroy();this.options.onFailure();};

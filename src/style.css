@@ -211,6 +211,8 @@ body[data-forest-secret='eyes'],body[data-forest-secret='fps'],body[data-easter-
 .footer-controls a,.footer-controls a:last-child{font-size:12px;min-height:44px;padding:10px 8px;letter-spacing:.04em}
 .release-art .eyebrow,.release-info>.eyebrow,.projection-head .eyebrow,.credits-dialog>.eyebrow{font-size:12px;line-height:1.8}
 .release-links a{font-size:14px;min-height:44px;align-items:center;letter-spacing:.04em}
+.release-experience{width:100%;margin-top:28px}
+.release-experience>.eyebrow{margin:0;color:var(--muted);font-size:12px;font-weight:400;line-height:1.8}
 .release-stepper{font-size:12px}.release-stepper button,.dialog-close{width:44px;height:44px;min-width:44px;min-height:44px}
 .projection-foot,.projection-foot p,.projection-foot a{font-size:12px;line-height:1.8}.projection-foot a{display:inline-flex;align-items:center;min-height:44px}
 .credits-invocation,.credits-dialog>p:last-child{font-size:14px;line-height:1.85}

@@ -8,7 +8,7 @@ import type { Chapter, Language } from './content';
 import { Ambient } from './ambient';
 import { renderBand } from './band';
 import { VideoPlayer } from './video-player';
-import { SCENE_ANCHORS, RETREAT_LIMIT, RETREAT_TRIGGER, activeRecording, atmospherePresence, chapterPresentation, liveFigureStillBounds } from './journey';
+import { SCENE_ANCHORS, RECORD_STOPS, RETREAT_LIMIT, RETREAT_TRIGGER, activeRecording, atmospherePresence, chapterPresentation, liveFigureStillBounds } from './journey';
 import type { World } from './world';
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -106,6 +106,9 @@ function updateRelease() {
   $('#art-credit').textContent=release.artwork?text.artwork+' / '+release.artwork:'';
   const container=$('#release-links');container.replaceChildren();
   if(release.spotify)container.append(link('Spotify',release.spotify));
+  const experience=$('#release-experience'),experienceLinks=$('#release-experience-links');
+  experienceLinks.replaceChildren();experience.hidden=release.id!=='the-aristocrats';
+  if(!experience.hidden)experienceLinks.append(link('The Aristocrats classic site','https://godbite-band.github.io/the-aristocrats/'));
   container.append(link('Bandcamp',release.bandcamp));
   if(release.youtube){
     const button=document.createElement('button');
@@ -164,6 +167,7 @@ function openDialog(dialog: HTMLDialogElement) {
   syncModalState();
 }
 function openRelease(index: number) {
+  advanceJourney(RECORD_STOPS[(index+releases.length)%releases.length]);
   selectedRelease=(index+releases.length)%releases.length;
   updateRelease();openDialog(releaseDialog);
 }
@@ -476,6 +480,30 @@ function navigate(chapter: Chapter, instant=false) {
   window.scrollTo({top:section.offsetTop,behavior:instant||reducedMotion.matches?'instant':'smooth'});
   if(instant)updateJourney();
 }
+function advanceJourney(destination?:number){
+  if(dialogs.some(dialog=>dialog.open)||secretPlaying||forestSecretMode!=='none')return;
+  endRetreatTouch();resetRetreat();
+  let top=scrollY+innerHeight*.55;
+  if(destination!==undefined){
+    const p=Math.max(0,Math.min(5,destination));
+    const index=SCENE_ANCHORS.findIndex((anchor,i)=>i<SCENE_ANCHORS.length-1&&p>=anchor&&p<SCENE_ANCHORS[i+1]);
+    top=index<0?sections[5].offsetTop:sections[index].offsetTop+(sections[index+1].offsetTop-sections[index].offsetTop)*(p-SCENE_ANCHORS[index])/(SCENE_ANCHORS[index+1]-SCENE_ANCHORS[index]);
+  }
+  window.scrollTo({top,behavior:reducedMotion.matches?'instant':'smooth'});requestJourney();
+}
+// Empty areas remain navigable when the experience uses still images.
+let stillPointer:{id:number;x:number;y:number;scroll:number}|null=null;
+const sceneControl='a,button,dialog,header,footer,input,textarea,select,iframe';
+addEventListener('pointerdown',event=>{
+  stillPointer=stillMode&&event.button===0&&!(event.target instanceof Element&&event.target.closest(sceneControl))
+    ?{id:event.pointerId,x:event.clientX,y:event.clientY,scroll:scrollY}:null;
+});
+addEventListener('pointercancel',()=>{stillPointer=null;});
+addEventListener('pointerup',event=>{
+  const start=stillPointer;stillPointer=null;
+  if(stillMode&&event.button===0&&start&&event.pointerId===start.id&&Math.hypot(event.clientX-start.x,event.clientY-start.y)<=8&&Math.abs(scrollY-start.scroll)<=2
+    &&!(event.target instanceof Element&&event.target.closest(sceneControl)))advanceJourney();
+});
 document.querySelectorAll<HTMLAnchorElement>('[data-nav]').forEach(anchor=>anchor.addEventListener('click',event=>{
   event.preventDefault();const chapter=anchor.dataset.nav as Chapter;
   navigate(chapter,true);
@@ -513,7 +541,7 @@ async function startWorld() {
   try {
     const {World}=await import('./world');
     if(generation!==worldGeneration || reducedMotion.matches)return;
-    world=new World({canvas:$<HTMLCanvasElement>('#world-canvas'),onFailure:useStills,onRelease:openRelease,onFilm:()=>openFilm(selectedFilm.id),onForestSecret:mode=>{forestSecretMode=mode;ambient.setHunt(mode==='fps');if(mode==='eyes')ambient.prepareHunt();if(mode==='none')ambient.setProgress(progress());},onHuntHit:()=>ambient.playHuntHit(),onHuntUnlock:()=>ambient.playHuntUnlock(),onToggleHuntSound:()=>{void ambient.toggle();},isSoundEnabled:()=>ambient.requested,onFpsProgress:p=>ambient.setProgress(p),onLiveScreen:bounds=>{
+    world=new World({canvas:$<HTMLCanvasElement>('#world-canvas'),onFailure:useStills,onAdvance:advanceJourney,onRelease:openRelease,onFilm:()=>openFilm(selectedFilm.id),onForestSecret:mode=>{forestSecretMode=mode;ambient.setHunt(mode==='fps');if(mode==='eyes')ambient.prepareHunt();if(mode==='none')ambient.setProgress(progress());},onHuntHit:()=>ambient.playHuntHit(),onHuntUnlock:()=>ambient.playHuntUnlock(),onToggleHuntSound:()=>{void ambient.toggle();},isSoundEnabled:()=>ambient.requested,onFpsProgress:p=>ambient.setProgress(p),onLiveScreen:bounds=>{
       const stage=stages[3];
       stage.style.setProperty('--live-left',bounds.x+'px');stage.style.setProperty('--live-top',bounds.y+'px');
       stage.style.setProperty('--live-width',bounds.width+'px');stage.style.setProperty('--live-height',bounds.height+'px');
